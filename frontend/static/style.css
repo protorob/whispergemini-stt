@@ -1,0 +1,334 @@
+:root {
+  color-scheme: light dark;
+  --border: #d0d0d5;
+  --muted: #666;
+  --accent: #3a5ccc;
+  --danger: #cc3a3a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --border: #444;
+    --muted: #aaa;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Several elements below (labels, sections) set an explicit `display`
+   (flex, etc.) which has higher CSS specificity than the browser's
+   default `[hidden] { display: none }` rule, so the `hidden` attribute
+   alone stops working on them once that happens. This rule wins over
+   any of that by attaching to the [hidden] attribute directly at higher
+   specificity, so toggling the `hidden` property in JS always actually
+   hides the element regardless of what other display rules apply. */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  max-width: 40rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+  line-height: 1.5;
+}
+
+h1 {
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: 0;
+}
+
+section.source {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  margin: 1.5rem 0;
+}
+
+.source-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.source-option label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.source-divider {
+  color: var(--muted);
+}
+
+.record-btn.recording {
+  border-color: var(--danger);
+  color: var(--danger);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.record-btn.recording:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.record-status {
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.5rem;
+}
+
+.source-summary {
+  margin: -0.5rem 0 1rem;
+  color: var(--muted);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 0.5rem;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+section.options {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.hardware-info {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 1.5rem;
+}
+
+section.options label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+select {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+}
+
+/* Shared action-button system: .btn is the base (layout/shape only), then
+   .btn-primary (solid accent fill, for the main CTA of a section) or
+   .btn-secondary (accent-colored outline, fills on hover — for supporting
+   actions like downloads) sets the actual "this is clickable" color. Every
+   action button in the app uses one of these two, so the accent color
+   consistently signals "this does something" rather than being decorative. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.2rem;
+  border-radius: 0.4rem;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  line-height: 1.2;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.btn-primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  filter: brightness(0.92);
+}
+
+.btn-secondary {
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+
+.btn-secondary:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.status {
+  min-height: 1.5rem;
+  color: var(--muted);
+}
+
+.spinner {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-right: 0.45em;
+  vertical-align: -0.15em;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.download-progress {
+  margin-top: 0.75rem;
+}
+
+.download-progress-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.download-progress progress {
+  width: 100%;
+  height: 0.6rem;
+  accent-color: var(--accent);
+}
+
+.download-progress-detail {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.result {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.preview {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(128, 128, 128, 0.1);
+  border-radius: 0.4rem;
+  padding: 0.75rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+textarea.preview {
+  display: block;
+  width: 100%;
+  font: inherit;
+  border: 1px solid var(--border);
+  resize: vertical;
+}
+
+textarea.preview:read-only {
+  color: var(--muted);
+  resize: none;
+}
+
+#preview-hint {
+  margin-top: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.enhance {
+  margin-top: 2rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+
+.enhance h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+.enhance-subtitle {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+}
+
+.enhance label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+}
+
+.enhance input[type="password"],
+.enhance select,
+.enhance textarea {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+}
+
+.enhance textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.custom-style-label {
+  animation: fade-in 0.15s ease-in;
+}
+
+.custom-style-hint {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: normal;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.creativity-description {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: -0.4rem 0 0.75rem;
+}
+
+.enhance-downloads {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 0.75rem;
+}

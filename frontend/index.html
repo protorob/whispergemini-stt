@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>am-whisper-stt</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main>
+    <h1>am-whisper-stt</h1>
+    <p class="subtitle">Upload an audio file or record from your mic, then transcribe.</p>
+
+    <section class="source">
+      <div class="source-option">
+        <label for="file-input">Upload a file</label>
+        <input type="file" id="file-input" accept="audio/*,video/*" />
+      </div>
+
+      <div class="source-divider">or</div>
+
+      <div class="source-option">
+        <button type="button" id="record-btn" class="btn btn-secondary record-btn">Start recording</button>
+        <span id="record-status" class="record-status"></span>
+      </div>
+    </section>
+
+    <p id="source-summary" class="source-summary" hidden>
+      <span id="source-summary-text"></span>
+      <button type="button" id="clear-source-btn" class="link-btn">clear</button>
+    </p>
+
+    <section class="options">
+      <label>
+        Engine
+        <select id="engine-select">
+          <option value="faster-whisper">faster-whisper</option>
+        </select>
+      </label>
+
+      <label>
+        Language
+        <select id="language-select">
+          <option value="">Auto-detect</option>
+          <option value="it">Italian</option>
+          <option value="en">English</option>
+          <option value="es">Spanish</option>
+        </select>
+      </label>
+
+      <label>
+        Output format
+        <select id="format-select">
+          <option value="txt">Text (.txt)</option>
+          <option value="md">Markdown (.md)</option>
+          <option value="srt">Subtitles (.srt)</option>
+          <option value="odt">OpenDocument (.odt)</option>
+        </select>
+      </label>
+
+      <label>
+        Model
+        <select id="model-select">
+          <option value="auto">Auto (detecting hardware…)</option>
+        </select>
+      </label>
+    </section>
+
+    <p id="hardware-info" class="hardware-info"></p>
+
+    <button type="button" id="transcribe-btn" class="btn btn-primary" disabled>Transcribe</button>
+
+    <div id="download-progress" class="download-progress" hidden>
+      <p id="download-progress-label" class="download-progress-label"></p>
+      <progress id="download-progress-bar" max="100" value="0"></progress>
+      <p id="download-progress-detail" class="download-progress-detail"></p>
+    </div>
+
+    <p id="status" class="status" role="status"></p>
+
+    <section id="result" class="result" hidden>
+      <textarea id="preview" class="preview" rows="10"></textarea>
+      <p id="preview-hint" class="custom-style-hint" hidden>
+        Edit as needed — this is also what gets sent to Gemini below.
+        <button type="button" id="reset-preview-btn" class="link-btn">reset to original</button>
+      </p>
+      <a id="download-link" class="btn btn-secondary" download>Download transcript</a>
+    </section>
+
+    <section id="enhance-section" class="enhance" hidden>
+      <h2>Format with AI (optional)</h2>
+      <p class="enhance-subtitle">
+        Sends the transcript to Google's Gemini API to add structure (headings, paragraphs,
+        lists) and fix obvious transcription errors. The transcript above is never modified.
+        Your API key is stored only in this browser (localStorage), never on the server. At
+        every creativity level, Gemini is instructed not to invent facts, claims, or details
+        that weren't in the original transcript — creativity only changes <em>how</em> it's
+        expressed, never <em>what</em> content exists.
+      </p>
+      <label>
+        Gemini API key
+        <input type="password" id="gemini-api-key" placeholder="Your Gemini API key" autocomplete="off" />
+      </label>
+      <label>
+        Creativity
+        <select id="creativity-select">
+          <option value="verbatim">Verbatim — fix errors only</option>
+        </select>
+      </label>
+      <p id="creativity-description" class="creativity-description"></p>
+      <label id="custom-style-label" class="custom-style-label" hidden>
+        Style/tone prompt
+        <span class="custom-style-hint">
+          Tip: describe tone and voice, not content — e.g. "casual and witty," "formal and technical," "like a friendly tutorial."
+        </span>
+        <textarea id="custom-style-input" rows="3" placeholder="e.g. Write in the style of a casual, witty tech blogger. Short punchy sentences."></textarea>
+      </label>
+      <button type="button" id="enhance-btn" class="btn btn-primary">Generate formatted version</button>
+      <p id="enhance-status" class="status" role="status"></p>
+      <section id="enhance-result" class="result" hidden>
+        <pre id="enhance-preview" class="preview"></pre>
+        <div id="enhance-downloads" class="enhance-downloads" hidden>
+          <a id="enhance-download-md" class="btn btn-secondary" download>Download formatted (.md)</a>
+          <button type="button" id="enhance-download-odt-btn" class="btn btn-secondary">Download formatted (.odt)</button>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

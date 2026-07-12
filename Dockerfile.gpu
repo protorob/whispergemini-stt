@@ -1,0 +1,30 @@
+# GPU image: adds the Parakeet engine (NeMo) on top of the base CPU stack.
+# Uses a CUDA+cuDNN base so the runtime libraries (libcublas, libcudnn)
+# needed for actual GPU inference are present at the OS level — the plain
+# `python:slim` + pip approach in the CPU Dockerfile does NOT reliably
+# provide these (see README's "GPU inference finding").
+#
+# NOT built/tested in this repo yet (no Docker available in the dev
+# sandbox this was written in, and NeMo's install is heavy). Verify the
+# CUDA/cuDNN tag below still matches what your installed ctranslate2/torch
+# wheels expect before relying on this in production.
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY backend/requirements.txt backend/requirements.txt
+COPY backend/requirements-gpu.txt backend/requirements-gpu.txt
+RUN pip3 install --no-cache-dir \
+    -r backend/requirements.txt \
+    -r backend/requirements-gpu.txt
+
+COPY backend backend
+COPY frontend frontend
+
+EXPOSE 8000
+
+CMD ["python3", "-m", "uvicorn", "app.main:app", "--app-dir", "backend", "--host", "0.0.0.0", "--port", "8000"]

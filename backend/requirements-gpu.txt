@@ -1,0 +1,5 @@
+# Optional, on top of requirements.txt — only needed to enable the
+# Parakeet engine (GPU-only). Heavy: pulls in PyTorch, NeMo, and their
+# dependency trees. See Dockerfile.gpu.
+torch
+nemo_toolkit[asr]
