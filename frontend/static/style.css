@@ -71,6 +71,12 @@ section.source {
   color: var(--muted);
 }
 
+.record-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .record-btn.recording {
   border-color: var(--danger);
   color: var(--danger);
@@ -96,6 +102,12 @@ section.source {
 .source-summary {
   margin: -0.5rem 0 1rem;
   color: var(--muted);
+}
+
+.source-audio-preview {
+  display: block;
+  width: 100%;
+  margin: -0.5rem 0 1.25rem;
 }
 
 .link-btn {
@@ -183,6 +195,25 @@ select {
   opacity: 0.5;
   cursor: not-allowed;
   filter: none;
+}
+
+.btn-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  margin-right: 0.4em;
+  vertical-align: -0.2em;
+}
+
+.link-btn .btn-icon {
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.25em;
 }
 
 .status {

@@ -7,6 +7,55 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+  <svg style="display: none" aria-hidden="true">
+    <symbol id="icon-mic" viewBox="0 0 24 24">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+      <line x1="12" y1="19" x2="12" y2="23"/>
+      <line x1="8" y1="23" x2="16" y2="23"/>
+    </symbol>
+    <symbol id="icon-square" viewBox="0 0 24 24">
+      <rect x="5" y="5" width="14" height="14" rx="2"/>
+    </symbol>
+    <symbol id="icon-pause" viewBox="0 0 24 24">
+      <rect x="6" y="4" width="4" height="16" rx="1"/>
+      <rect x="14" y="4" width="4" height="16" rx="1"/>
+    </symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24">
+      <polygon points="6 3 21 12 6 21 6 3"/>
+    </symbol>
+    <symbol id="icon-file-text" viewBox="0 0 24 24">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="8" y1="13" x2="16" y2="13"/>
+      <line x1="8" y1="17" x2="16" y2="17"/>
+      <line x1="8" y1="9" x2="9" y2="9"/>
+    </symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </symbol>
+    <symbol id="icon-sparkles" viewBox="0 0 24 24">
+      <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z"/>
+      <path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"/>
+    </symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24">
+      <rect x="9" y="9" width="13" height="13" rx="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24">
+      <polyline points="20 6 9 17 4 12"/>
+    </symbol>
+    <symbol id="icon-undo" viewBox="0 0 24 24">
+      <path d="M3 7v6h6"/>
+      <path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>
+    </symbol>
+    <symbol id="icon-x" viewBox="0 0 24 24">
+      <line x1="18" y1="6" x2="6" y2="18"/>
+      <line x1="6" y1="6" x2="18" y2="18"/>
+    </symbol>
+  </svg>
   <main>
     <h1>am-whisper-stt</h1>
     <p class="subtitle">Upload an audio file or record from your mic, then transcribe.</p>
@@ -20,15 +69,30 @@
       <div class="source-divider">or</div>
 
       <div class="source-option">
-        <button type="button" id="record-btn" class="btn btn-secondary record-btn">Start recording</button>
+        <div class="record-controls">
+          <button type="button" id="record-btn" class="btn btn-secondary record-btn">
+            <svg class="btn-icon" id="record-btn-icon-mic" aria-hidden="true"><use href="#icon-mic"></use></svg>
+            <svg class="btn-icon" id="record-btn-icon-stop" hidden aria-hidden="true"><use href="#icon-square"></use></svg>
+            <span id="record-btn-label">Start recording</span>
+          </button>
+          <button type="button" id="pause-btn" class="btn btn-secondary" hidden>
+            <svg class="btn-icon" id="pause-btn-icon-pause" aria-hidden="true"><use href="#icon-pause"></use></svg>
+            <svg class="btn-icon" id="pause-btn-icon-resume" hidden aria-hidden="true"><use href="#icon-play"></use></svg>
+            <span id="pause-btn-label">Pause</span>
+          </button>
+        </div>
         <span id="record-status" class="record-status"></span>
       </div>
     </section>
 
     <p id="source-summary" class="source-summary" hidden>
       <span id="source-summary-text"></span>
-      <button type="button" id="clear-source-btn" class="link-btn">clear</button>
+      <button type="button" id="clear-source-btn" class="link-btn">
+        <svg class="btn-icon" aria-hidden="true"><use href="#icon-x"></use></svg>clear
+      </button>
     </p>
+
+    <audio id="source-audio-preview" class="source-audio-preview" controls hidden></audio>
 
     <section class="options">
       <label>
@@ -68,7 +132,9 @@
 
     <p id="hardware-info" class="hardware-info"></p>
 
-    <button type="button" id="transcribe-btn" class="btn btn-primary" disabled>Transcribe</button>
+    <button type="button" id="transcribe-btn" class="btn btn-primary" disabled>
+      <svg class="btn-icon" aria-hidden="true"><use href="#icon-file-text"></use></svg>Transcribe
+    </button>
 
     <div id="download-progress" class="download-progress" hidden>
       <p id="download-progress-label" class="download-progress-label"></p>
@@ -82,9 +148,13 @@
       <textarea id="preview" class="preview" rows="10"></textarea>
       <p id="preview-hint" class="custom-style-hint" hidden>
         Edit as needed — this is also what gets sent to Gemini below.
-        <button type="button" id="reset-preview-btn" class="link-btn">reset to original</button>
+        <button type="button" id="reset-preview-btn" class="link-btn">
+          <svg class="btn-icon" aria-hidden="true"><use href="#icon-undo"></use></svg>reset to original
+        </button>
       </p>
-      <a id="download-link" class="btn btn-secondary" download>Download transcript</a>
+      <a id="download-link" class="btn btn-secondary" download>
+        <svg class="btn-icon" aria-hidden="true"><use href="#icon-download"></use></svg><span id="download-link-label">Download transcript</span>
+      </a>
     </section>
 
     <section id="enhance-section" class="enhance" hidden>
@@ -115,13 +185,24 @@
         </span>
         <textarea id="custom-style-input" rows="3" placeholder="e.g. Write in the style of a casual, witty tech blogger. Short punchy sentences."></textarea>
       </label>
-      <button type="button" id="enhance-btn" class="btn btn-primary">Generate formatted version</button>
+      <button type="button" id="enhance-btn" class="btn btn-primary">
+        <svg class="btn-icon" aria-hidden="true"><use href="#icon-sparkles"></use></svg>Generate formatted version
+      </button>
       <p id="enhance-status" class="status" role="status"></p>
       <section id="enhance-result" class="result" hidden>
         <pre id="enhance-preview" class="preview"></pre>
         <div id="enhance-downloads" class="enhance-downloads" hidden>
-          <a id="enhance-download-md" class="btn btn-secondary" download>Download formatted (.md)</a>
-          <button type="button" id="enhance-download-odt-btn" class="btn btn-secondary">Download formatted (.odt)</button>
+          <button type="button" id="enhance-copy-btn" class="btn btn-secondary">
+            <svg class="btn-icon" id="enhance-copy-icon-copy" aria-hidden="true"><use href="#icon-copy"></use></svg>
+            <svg class="btn-icon" id="enhance-copy-icon-check" hidden aria-hidden="true"><use href="#icon-check"></use></svg>
+            <span id="enhance-copy-label">Copy</span>
+          </button>
+          <a id="enhance-download-md" class="btn btn-secondary" download>
+            <svg class="btn-icon" aria-hidden="true"><use href="#icon-download"></use></svg>Download formatted (.md)
+          </a>
+          <button type="button" id="enhance-download-odt-btn" class="btn btn-secondary">
+            <svg class="btn-icon" aria-hidden="true"><use href="#icon-download"></use></svg>Download formatted (.odt)
+          </button>
         </div>
       </section>
     </section>

@@ -1,9 +1,17 @@
 const fileInput = document.getElementById("file-input");
 const recordBtn = document.getElementById("record-btn");
+const recordBtnLabel = document.getElementById("record-btn-label");
+const recordBtnIconMic = document.getElementById("record-btn-icon-mic");
+const recordBtnIconStop = document.getElementById("record-btn-icon-stop");
 const recordStatus = document.getElementById("record-status");
+const pauseBtn = document.getElementById("pause-btn");
+const pauseBtnLabel = document.getElementById("pause-btn-label");
+const pauseBtnIconPause = document.getElementById("pause-btn-icon-pause");
+const pauseBtnIconResume = document.getElementById("pause-btn-icon-resume");
 const sourceSummary = document.getElementById("source-summary");
 const sourceSummaryText = document.getElementById("source-summary-text");
 const clearSourceBtn = document.getElementById("clear-source-btn");
+const sourceAudioPreview = document.getElementById("source-audio-preview");
 const engineSelect = document.getElementById("engine-select");
 const languageSelect = document.getElementById("language-select");
 const formatSelect = document.getElementById("format-select");
@@ -17,6 +25,7 @@ const downloadProgressDetail = document.getElementById("download-progress-detail
 const statusEl = document.getElementById("status");
 const resultSection = document.getElementById("result");
 const downloadLink = document.getElementById("download-link");
+const downloadLinkLabel = document.getElementById("download-link-label");
 const previewEl = document.getElementById("preview");
 const enhanceSection = document.getElementById("enhance-section");
 const geminiApiKeyInput = document.getElementById("gemini-api-key");
@@ -27,6 +36,10 @@ const enhancePreview = document.getElementById("enhance-preview");
 const enhanceDownloads = document.getElementById("enhance-downloads");
 const enhanceDownloadMd = document.getElementById("enhance-download-md");
 const enhanceDownloadOdtBtn = document.getElementById("enhance-download-odt-btn");
+const enhanceCopyBtn = document.getElementById("enhance-copy-btn");
+const enhanceCopyLabel = document.getElementById("enhance-copy-label");
+const enhanceCopyIconCopy = document.getElementById("enhance-copy-icon-copy");
+const enhanceCopyIconCheck = document.getElementById("enhance-copy-icon-check");
 const creativitySelect = document.getElementById("creativity-select");
 const creativityDescription = document.getElementById("creativity-description");
 const customStyleLabel = document.getElementById("custom-style-label");
@@ -45,8 +58,11 @@ function setBusyStatus(el, text) {
 let mediaRecorder = null;
 let audioChunks = [];
 let recordingTimer = null;
-let recordingStartedAt = null;
+let recordingSegmentStart = null; // Date.now() when the current running segment began, or null while paused
+let recordingAccumulatedMs = 0; // elapsed time banked from segments before the current one
+let isPaused = false;
 let selectedSource = null; // { blob, filename }
+let sourcePreviewUrl = null; // object URL currently backing the source-audio-preview element
 let engineLanguageSupport = {}; // engine name -> list of supported codes, or null for unrestricted
 let hasTranscription = false; // whether a transcription has completed (gates the enhance button)
 let lastEnhancedMarkdown = null;
@@ -185,6 +201,11 @@ function setSource(kind, blob, filename) {
   sourceSummaryText.textContent =
     kind === "file" ? `Selected file: ${filename}` : `Recorded audio ready: ${filename}`;
   transcribeBtn.disabled = false;
+
+  if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl);
+  sourcePreviewUrl = URL.createObjectURL(blob);
+  sourceAudioPreview.src = sourcePreviewUrl;
+  sourceAudioPreview.hidden = false;
 }
 
 function clearSource() {
@@ -192,6 +213,12 @@ function clearSource() {
   fileInput.value = "";
   sourceSummary.hidden = true;
   transcribeBtn.disabled = true;
+
+  if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl);
+  sourcePreviewUrl = null;
+  sourceAudioPreview.pause();
+  sourceAudioPreview.removeAttribute("src");
+  sourceAudioPreview.hidden = true;
 }
 
 fileInput.addEventListener("change", () => {
@@ -202,8 +229,15 @@ fileInput.addEventListener("change", () => {
 
 clearSourceBtn.addEventListener("click", clearSource);
 
+function resetPauseButton() {
+  isPaused = false;
+  pauseBtnLabel.textContent = "Pause";
+  pauseBtnIconPause.hidden = false;
+  pauseBtnIconResume.hidden = true;
+}
+
 recordBtn.addEventListener("click", async () => {
-  if (mediaRecorder && mediaRecorder.state === "recording") {
+  if (mediaRecorder && (mediaRecorder.state === "recording" || mediaRecorder.state === "paused")) {
     mediaRecorder.stop();
     return;
   }
@@ -220,9 +254,13 @@ recordBtn.addEventListener("click", async () => {
     mediaRecorder.addEventListener("stop", () => {
       stream.getTracks().forEach((track) => track.stop());
       clearInterval(recordingTimer);
-      recordBtn.textContent = "Start recording";
+      recordBtnLabel.textContent = "Start recording";
+      recordBtnIconMic.hidden = false;
+      recordBtnIconStop.hidden = true;
       recordBtn.classList.remove("recording");
       recordStatus.textContent = "";
+      pauseBtn.hidden = true;
+      resetPauseButton();
 
       const mimeType = mediaRecorder.mimeType || "audio/webm";
       const blob = new Blob(audioChunks, { type: mimeType });
@@ -232,17 +270,46 @@ recordBtn.addEventListener("click", async () => {
     });
 
     mediaRecorder.start();
-    recordBtn.textContent = "Stop recording";
+    recordBtnLabel.textContent = "Stop recording";
+    recordBtnIconMic.hidden = true;
+    recordBtnIconStop.hidden = false;
     recordBtn.classList.add("recording");
-    recordingStartedAt = Date.now();
+    pauseBtn.hidden = false;
+    resetPauseButton();
+    recordingAccumulatedMs = 0;
+    recordingSegmentStart = Date.now();
     recordingTimer = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - recordingStartedAt) / 1000);
+      const runningMs = recordingSegmentStart != null ? Date.now() - recordingSegmentStart : 0;
+      const elapsed = Math.floor((recordingAccumulatedMs + runningMs) / 1000);
       const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
       const ss = String(elapsed % 60).padStart(2, "0");
-      recordStatus.textContent = `Recording… ${mm}:${ss}`;
+      recordStatus.textContent = `${isPaused ? "Paused" : "Recording…"} ${mm}:${ss}`;
     }, 500);
   } catch (err) {
     statusEl.textContent = `Microphone access failed: ${err.message}`;
+  }
+});
+
+pauseBtn.addEventListener("click", () => {
+  if (!mediaRecorder) return;
+
+  if (mediaRecorder.state === "recording") {
+    mediaRecorder.pause();
+    recordingAccumulatedMs += Date.now() - recordingSegmentStart;
+    recordingSegmentStart = null;
+    isPaused = true;
+    pauseBtnLabel.textContent = "Resume";
+    pauseBtnIconPause.hidden = true;
+    pauseBtnIconResume.hidden = false;
+    recordBtn.classList.remove("recording");
+  } else if (mediaRecorder.state === "paused") {
+    mediaRecorder.resume();
+    recordingSegmentStart = Date.now();
+    isPaused = false;
+    pauseBtnLabel.textContent = "Pause";
+    pauseBtnIconPause.hidden = false;
+    pauseBtnIconResume.hidden = true;
+    recordBtn.classList.add("recording");
   }
 });
 
@@ -368,7 +435,7 @@ transcribeBtn.addEventListener("click", async () => {
     const url = URL.createObjectURL(blob);
     downloadLink.href = url;
     downloadLink.download = filename;
-    downloadLink.textContent = `Download ${filename}`;
+    downloadLinkLabel.textContent = `Download ${filename}`;
 
     if (isTextualFormat) {
       originalTranscriptText = await blob.text();
@@ -481,6 +548,7 @@ enhanceBtn.addEventListener("click", async () => {
     // result, or nothing at all) while the real text is still arriving.
     enhanceResult.hidden = false;
     enhanceDownloads.hidden = true;
+    resetCopyButton();
     lastEnhancedMarkdown = await streamEnhance(fd, (partialText) => {
       enhancePreview.textContent = partialText;
     });
@@ -495,6 +563,43 @@ enhanceBtn.addEventListener("click", async () => {
     enhanceStatus.textContent = `Error: ${err.message}`;
   } finally {
     enhanceBtn.disabled = false;
+  }
+});
+
+// navigator.clipboard requires a secure context (https, or localhost) — the
+// hidden-textarea + execCommand fallback covers plain-http deployments where
+// it's unavailable.
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function resetCopyButton() {
+  enhanceCopyLabel.textContent = "Copy";
+  enhanceCopyIconCopy.hidden = false;
+  enhanceCopyIconCheck.hidden = true;
+}
+
+enhanceCopyBtn.addEventListener("click", async () => {
+  if (!lastEnhancedMarkdown) return;
+  try {
+    await copyTextToClipboard(lastEnhancedMarkdown);
+    enhanceCopyLabel.textContent = "Copied!";
+    enhanceCopyIconCopy.hidden = true;
+    enhanceCopyIconCheck.hidden = false;
+    setTimeout(resetCopyButton, 1500);
+  } catch (err) {
+    enhanceStatus.textContent = `Error: ${err.message}`;
   }
 });
 
