@@ -45,69 +45,162 @@ h1 {
   margin-top: 0;
 }
 
-section.source {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+.source-card {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 1.25rem;
   margin: 1.5rem 0;
 }
 
-.source-option {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+/* In the idle state the dropzone's own dashed border is the only border we
+   want — dropping the card's border/padding here avoids a "square inside a
+   square" look, letting the dashed line fill the full card area. */
+.source-card.card-idle {
+  border: none;
+  padding: 0;
 }
 
-.source-option label {
+.state-close-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  /* Wavesurfer's own shadow-DOM canvas layers use z-index up to 5 internally
+     and (since they're absolutely positioned) resolve their containing block
+     up to this same .source-card, making them real stacking siblings of this
+     button — needs to clear that to stay clickable above the waveform. */
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.state-close-btn:hover {
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--danger);
+}
+
+.state-close-btn .btn-icon {
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0;
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 2rem 1rem;
+  border: 2px dashed var(--border);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.dropzone:hover,
+.dropzone.dragover {
+  border-color: var(--accent);
+  background: rgba(58, 92, 204, 0.05);
+}
+
+.dropzone-label {
+  margin: 0;
+}
+
+.dropzone-or {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.mic-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.mic-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.mic-btn .btn-icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-right: 0;
+}
+
+.waveform {
+  width: 100%;
+}
+
+.recording-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.record-status {
+  flex: 1;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.upload-progress-label {
+  margin: 0 0 0.35rem;
   font-size: 0.9rem;
   color: var(--muted);
 }
 
-.source-divider {
-  color: var(--muted);
-}
-
-.record-controls {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.record-btn.recording {
-  border-color: var(--danger);
-  color: var(--danger);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-.record-btn.recording:hover {
-  background: var(--danger);
-  color: #fff;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-
-.record-status {
-  color: var(--danger);
-  font-variant-numeric: tabular-nums;
-  margin-left: 0.5rem;
-}
-
-.source-summary {
-  margin: -0.5rem 0 1rem;
-  color: var(--muted);
-}
-
-.source-audio-preview {
-  display: block;
+.upload-progress-bar {
   width: 100%;
-  margin: -0.5rem 0 1.25rem;
+  height: 0.6rem;
+  accent-color: var(--accent);
+}
+
+.source-summary-text {
+  margin: 0 1.5rem 0.75rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.review-playback {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.review-playback .waveform {
+  flex: 1;
+}
+
+.waveform-play-btn {
+  flex-shrink: 0;
+}
+
+.review-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 .link-btn {
@@ -188,6 +281,17 @@ select {
 
 .btn-secondary:hover {
   background: var(--accent);
+  color: #fff;
+}
+
+.btn-danger {
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: var(--danger);
   color: #fff;
 }
 

@@ -60,39 +60,67 @@
     <h1>am-whisper-stt</h1>
     <p class="subtitle">Upload an audio file or record from your mic, then transcribe.</p>
 
-    <section class="source">
-      <div class="source-option">
-        <label for="file-input">Upload a file</label>
-        <input type="file" id="file-input" accept="audio/*,video/*" />
+    <section class="source-card card-idle" id="source-card">
+      <input type="file" id="file-input" accept="audio/*,video/*" hidden />
+
+      <!-- idle: click-or-drop zone, plus a mic button to record instead -->
+      <div id="state-idle" class="source-state">
+        <div id="dropzone" class="dropzone">
+          <p class="dropzone-label">Drop audio/video file, or click to browse.</p>
+          <p class="dropzone-or">or use your microphone.</p>
+          <button type="button" id="record-btn" class="mic-btn" aria-label="Record from microphone">
+            <svg class="btn-icon" aria-hidden="true"><use href="#icon-mic"></use></svg>
+          </button>
+        </div>
       </div>
 
-      <div class="source-divider">or</div>
-
-      <div class="source-option">
-        <div class="record-controls">
-          <button type="button" id="record-btn" class="btn btn-secondary record-btn">
-            <svg class="btn-icon" id="record-btn-icon-mic" aria-hidden="true"><use href="#icon-mic"></use></svg>
-            <svg class="btn-icon" id="record-btn-icon-stop" hidden aria-hidden="true"><use href="#icon-square"></use></svg>
-            <span id="record-btn-label">Start recording</span>
-          </button>
-          <button type="button" id="pause-btn" class="btn btn-secondary" hidden>
+      <!-- recording: live waveform + pause/resume + proceed -->
+      <div id="state-recording" class="source-state" hidden>
+        <button type="button" id="recording-close-btn" class="state-close-btn" aria-label="Cancel recording">
+          <svg class="btn-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+        <div id="record-waveform" class="waveform"></div>
+        <div class="recording-controls">
+          <button type="button" id="pause-btn" class="btn btn-secondary">
             <svg class="btn-icon" id="pause-btn-icon-pause" aria-hidden="true"><use href="#icon-pause"></use></svg>
             <svg class="btn-icon" id="pause-btn-icon-resume" hidden aria-hidden="true"><use href="#icon-play"></use></svg>
             <span id="pause-btn-label">Pause</span>
           </button>
+          <span id="record-status" class="record-status"></span>
+          <button type="button" id="proceed-btn" class="btn btn-primary">Proceed →</button>
         </div>
-        <span id="record-status" class="record-status"></span>
+      </div>
+
+      <!-- uploading: transient, real FileReader byte progress while the file loads -->
+      <div id="state-uploading" class="source-state" hidden>
+        <p id="upload-progress-label" class="upload-progress-label"></p>
+        <progress id="upload-progress-bar" class="upload-progress-bar" max="100" value="0"></progress>
+      </div>
+
+      <!-- review: shared by both the record and upload paths -->
+      <div id="state-review" class="source-state" hidden>
+        <button type="button" id="review-close-btn" class="state-close-btn" aria-label="Discard and start over">
+          <svg class="btn-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        </button>
+        <p id="source-summary-text" class="source-summary-text"></p>
+        <div class="review-playback">
+          <button type="button" id="source-play-btn" class="btn btn-secondary waveform-play-btn">
+            <svg class="btn-icon" id="source-play-icon-play" aria-hidden="true"><use href="#icon-play"></use></svg>
+            <svg class="btn-icon" id="source-play-icon-pause" hidden aria-hidden="true"><use href="#icon-pause"></use></svg>
+            <span id="source-play-label">Play</span>
+          </button>
+          <div id="source-waveform" class="waveform"></div>
+        </div>
+        <div class="review-actions">
+          <button type="button" id="transcribe-btn" class="btn btn-primary">
+            <svg class="btn-icon" aria-hidden="true"><use href="#icon-file-text"></use></svg>Transcribe
+          </button>
+          <button type="button" id="delete-source-btn" class="btn btn-danger">
+            <svg class="btn-icon" aria-hidden="true"><use href="#icon-x"></use></svg>Delete
+          </button>
+        </div>
       </div>
     </section>
-
-    <p id="source-summary" class="source-summary" hidden>
-      <span id="source-summary-text"></span>
-      <button type="button" id="clear-source-btn" class="link-btn">
-        <svg class="btn-icon" aria-hidden="true"><use href="#icon-x"></use></svg>clear
-      </button>
-    </p>
-
-    <audio id="source-audio-preview" class="source-audio-preview" controls hidden></audio>
 
     <section class="options">
       <label>
@@ -131,10 +159,6 @@
     </section>
 
     <p id="hardware-info" class="hardware-info"></p>
-
-    <button type="button" id="transcribe-btn" class="btn btn-primary" disabled>
-      <svg class="btn-icon" aria-hidden="true"><use href="#icon-file-text"></use></svg>Transcribe
-    </button>
 
     <div id="download-progress" class="download-progress" hidden>
       <p id="download-progress-label" class="download-progress-label"></p>
@@ -207,6 +231,6 @@
       </section>
     </section>
   </main>
-  <script src="/static/app.js"></script>
+  <script type="module" src="/static/app.js"></script>
 </body>
 </html>

@@ -1,17 +1,32 @@
+import WaveSurfer from "/static/vendor/wavesurfer/wavesurfer.esm.js";
+import RecordPlugin from "/static/vendor/wavesurfer/record.esm.js";
+
 const fileInput = document.getElementById("file-input");
+const sourceCard = document.getElementById("source-card");
+const stateIdle = document.getElementById("state-idle");
+const stateRecording = document.getElementById("state-recording");
+const stateUploading = document.getElementById("state-uploading");
+const stateReview = document.getElementById("state-review");
+const dropzone = document.getElementById("dropzone");
 const recordBtn = document.getElementById("record-btn");
-const recordBtnLabel = document.getElementById("record-btn-label");
-const recordBtnIconMic = document.getElementById("record-btn-icon-mic");
-const recordBtnIconStop = document.getElementById("record-btn-icon-stop");
+const recordingCloseBtn = document.getElementById("recording-close-btn");
 const recordStatus = document.getElementById("record-status");
 const pauseBtn = document.getElementById("pause-btn");
 const pauseBtnLabel = document.getElementById("pause-btn-label");
 const pauseBtnIconPause = document.getElementById("pause-btn-icon-pause");
 const pauseBtnIconResume = document.getElementById("pause-btn-icon-resume");
-const sourceSummary = document.getElementById("source-summary");
+const proceedBtn = document.getElementById("proceed-btn");
+const recordWaveformEl = document.getElementById("record-waveform");
+const uploadProgressLabel = document.getElementById("upload-progress-label");
+const uploadProgressBar = document.getElementById("upload-progress-bar");
+const reviewCloseBtn = document.getElementById("review-close-btn");
 const sourceSummaryText = document.getElementById("source-summary-text");
-const clearSourceBtn = document.getElementById("clear-source-btn");
-const sourceAudioPreview = document.getElementById("source-audio-preview");
+const deleteSourceBtn = document.getElementById("delete-source-btn");
+const sourceWaveformEl = document.getElementById("source-waveform");
+const sourcePlayBtn = document.getElementById("source-play-btn");
+const sourcePlayLabel = document.getElementById("source-play-label");
+const sourcePlayIconPlay = document.getElementById("source-play-icon-play");
+const sourcePlayIconPause = document.getElementById("source-play-icon-pause");
 const engineSelect = document.getElementById("engine-select");
 const languageSelect = document.getElementById("language-select");
 const formatSelect = document.getElementById("format-select");
@@ -55,15 +70,31 @@ function setBusyStatus(el, text) {
   el.appendChild(document.createTextNode(text));
 }
 
-let mediaRecorder = null;
-let audioChunks = [];
-let recordingTimer = null;
-let recordingSegmentStart = null; // Date.now() when the current running segment began, or null while paused
-let recordingAccumulatedMs = 0; // elapsed time banked from segments before the current one
-let isPaused = false;
+// Wavesurfer's waveColor/progressColor options need a literal color, not a
+// CSS custom property reference — a canvas fillStyle can't resolve var(...)
+// itself, so this resolves it once against the current theme at instantiation.
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+let recordWavesurfer = null; // wavesurfer instance backing the live recording waveform, created per recording session
+let recordPlugin = null; // its RecordPlugin, drives mic capture + pause/resume + record-progress
+let discardRecording = false; // set right before stopRecording() when the close (X) button, not Proceed, ended the session
+let sourceWavesurfer = null; // wavesurfer instance backing the playback waveform for whatever selectedSource currently is
 let selectedSource = null; // { blob, filename }
-let sourcePreviewUrl = null; // object URL currently backing the source-audio-preview element
 let engineLanguageSupport = {}; // engine name -> list of supported codes, or null for unrestricted
+
+// The source card is a single element showing one of these four states at a
+// time — idle (drop/record entry point), recording (live waveform), a brief
+// uploading step (real FileReader byte progress), and review (playback +
+// transcribe/delete) shared by both the upload and record paths.
+const cardStates = { idle: stateIdle, recording: stateRecording, uploading: stateUploading, review: stateReview };
+function setCardState(state) {
+  for (const [name, el] of Object.entries(cardStates)) {
+    el.hidden = name !== state;
+  }
+  sourceCard.classList.toggle("card-idle", state === "idle");
+}
 let hasTranscription = false; // whether a transcription has completed (gates the enhance button)
 let lastEnhancedMarkdown = null;
 let originalTranscriptText = null; // pristine transcribed text, for the "reset to original" button
@@ -195,122 +226,221 @@ function extensionFromMimeType(mimeType) {
   return "webm";
 }
 
+function setSourcePlayState(isPlaying) {
+  sourcePlayLabel.textContent = isPlaying ? "Pause" : "Play";
+  sourcePlayIconPlay.hidden = isPlaying;
+  sourcePlayIconPause.hidden = !isPlaying;
+}
+
+function teardownSourceWavesurfer() {
+  if (sourceWavesurfer) {
+    sourceWavesurfer.destroy();
+    sourceWavesurfer = null;
+  }
+}
+
+function loadSourcePreview(blob) {
+  teardownSourceWavesurfer();
+  sourceWavesurfer = WaveSurfer.create({
+    container: sourceWaveformEl,
+    waveColor: cssVar("--border"),
+    progressColor: cssVar("--accent"),
+    height: 48,
+    barWidth: 2,
+    cursorWidth: 0,
+  });
+  sourceWavesurfer.loadBlob(blob);
+  setSourcePlayState(false);
+  sourceWavesurfer.on("play", () => setSourcePlayState(true));
+  sourceWavesurfer.on("pause", () => setSourcePlayState(false));
+  sourceWavesurfer.on("finish", () => setSourcePlayState(false));
+}
+
+sourcePlayBtn.addEventListener("click", () => {
+  if (sourceWavesurfer) sourceWavesurfer.playPause();
+});
+
 function setSource(kind, blob, filename) {
   selectedSource = { blob, filename };
-  sourceSummary.hidden = false;
   sourceSummaryText.textContent =
     kind === "file" ? `Selected file: ${filename}` : `Recorded audio ready: ${filename}`;
-  transcribeBtn.disabled = false;
-
-  if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl);
-  sourcePreviewUrl = URL.createObjectURL(blob);
-  sourceAudioPreview.src = sourcePreviewUrl;
-  sourceAudioPreview.hidden = false;
+  // Unhide the review panel before creating the wavesurfer instance — its
+  // container needs real (non-zero) layout dimensions at creation time.
+  setCardState("review");
+  loadSourcePreview(blob);
 }
 
 function clearSource() {
   selectedSource = null;
   fileInput.value = "";
-  sourceSummary.hidden = true;
-  transcribeBtn.disabled = true;
-
-  if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl);
-  sourcePreviewUrl = null;
-  sourceAudioPreview.pause();
-  sourceAudioPreview.removeAttribute("src");
-  sourceAudioPreview.hidden = true;
+  teardownSourceWavesurfer();
+  setCardState("idle");
 }
+
+deleteSourceBtn.addEventListener("click", clearSource);
+reviewCloseBtn.addEventListener("click", clearSource);
+
+// Click-to-browse anywhere in the dropzone, except the mic button (which has
+// its own action) — its click would otherwise bubble up and fire both.
+dropzone.addEventListener("click", (event) => {
+  if (event.target.closest("#record-btn")) return;
+  fileInput.click();
+});
+
+for (const evt of ["dragenter", "dragover"]) {
+  dropzone.addEventListener(evt, (event) => {
+    event.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+}
+for (const evt of ["dragleave", "dragend"]) {
+  dropzone.addEventListener(evt, () => dropzone.classList.remove("dragover"));
+}
+dropzone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  dropzone.classList.remove("dragover");
+  const file = event.dataTransfer.files[0];
+  if (file) handleFileSelected(file);
+});
 
 fileInput.addEventListener("change", () => {
   const file = fileInput.files[0];
-  if (!file) return;
-  setSource("file", file, file.name);
+  if (file) handleFileSelected(file);
 });
 
-clearSourceBtn.addEventListener("click", clearSource);
+// Reads the whole file via FileReader purely to drive a real byte-progress
+// bar (the actual data path still uses the original File/Blob afterward) —
+// genuine progress for large video files, near-instant (and honestly so)
+// for typical small audio clips.
+function readFileWithProgress(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    reader.onload = () => resolve();
+    reader.onerror = () => reject(reader.error || new Error("File read failed"));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function handleFileSelected(file) {
+  setCardState("uploading");
+  uploadProgressBar.value = 0;
+  uploadProgressLabel.textContent = `Loading ${file.name}…`;
+  try {
+    await readFileWithProgress(file, (percent) => {
+      uploadProgressBar.value = percent;
+      uploadProgressLabel.textContent = `Loading ${file.name}… ${percent}%`;
+    });
+  } catch (err) {
+    statusEl.textContent = `Failed to read file: ${err.message}`;
+    setCardState("idle");
+    return;
+  }
+  setSource("file", file, file.name);
+}
 
 function resetPauseButton() {
-  isPaused = false;
   pauseBtnLabel.textContent = "Pause";
   pauseBtnIconPause.hidden = false;
   pauseBtnIconResume.hidden = true;
 }
 
-recordBtn.addEventListener("click", async () => {
-  if (mediaRecorder && (mediaRecorder.state === "recording" || mediaRecorder.state === "paused")) {
-    mediaRecorder.stop();
-    return;
+function teardownRecordWavesurfer() {
+  if (recordWavesurfer) {
+    const instance = recordWavesurfer;
+    recordWavesurfer = null;
+    recordPlugin = null;
+    // RecordPlugin has its own "record-end" listener (registered before ours)
+    // that tears down its mic AudioContext. Destroying synchronously in the
+    // same tick raced with that internal cleanup and threw "Cannot close a
+    // closed AudioContext" — deferring one tick lets it finish first.
+    setTimeout(() => instance.destroy(), 0);
   }
+}
 
+recordBtn.addEventListener("click", async () => {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioChunks = [];
-    mediaRecorder = new MediaRecorder(stream);
-
-    mediaRecorder.addEventListener("dataavailable", (event) => {
-      if (event.data.size > 0) audioChunks.push(event.data);
+    // Unhide the recording panel before creating the wavesurfer instance —
+    // its container needs real (non-zero) layout dimensions at creation time.
+    setCardState("recording");
+    recordWavesurfer = WaveSurfer.create({
+      container: recordWaveformEl,
+      waveColor: cssVar("--accent"),
+      height: 60,
+      barWidth: 2,
     });
+    recordPlugin = recordWavesurfer.registerPlugin(
+      RecordPlugin.create({ scrollingWaveform: true, renderRecordedAudio: false })
+    );
 
-    mediaRecorder.addEventListener("stop", () => {
-      stream.getTracks().forEach((track) => track.stop());
-      clearInterval(recordingTimer);
-      recordBtnLabel.textContent = "Start recording";
-      recordBtnIconMic.hidden = false;
-      recordBtnIconStop.hidden = true;
-      recordBtn.classList.remove("recording");
-      recordStatus.textContent = "";
-      pauseBtn.hidden = true;
-      resetPauseButton();
-
-      const mimeType = mediaRecorder.mimeType || "audio/webm";
-      const blob = new Blob(audioChunks, { type: mimeType });
-      const filename = `recording.${extensionFromMimeType(mimeType)}`;
-      fileInput.value = "";
-      setSource("recording", blob, filename);
-    });
-
-    mediaRecorder.start();
-    recordBtnLabel.textContent = "Stop recording";
-    recordBtnIconMic.hidden = true;
-    recordBtnIconStop.hidden = false;
-    recordBtn.classList.add("recording");
-    pauseBtn.hidden = false;
-    resetPauseButton();
-    recordingAccumulatedMs = 0;
-    recordingSegmentStart = Date.now();
-    recordingTimer = setInterval(() => {
-      const runningMs = recordingSegmentStart != null ? Date.now() - recordingSegmentStart : 0;
-      const elapsed = Math.floor((recordingAccumulatedMs + runningMs) / 1000);
+    let lastRecordMs = 0;
+    function renderRecordStatus(paused) {
+      const elapsed = Math.floor(lastRecordMs / 1000);
       const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
       const ss = String(elapsed % 60).padStart(2, "0");
-      recordStatus.textContent = `${isPaused ? "Paused" : "Recording…"} ${mm}:${ss}`;
-    }, 500);
+      recordStatus.textContent = `${paused ? "Paused" : "Recording…"} ${mm}:${ss}`;
+    }
+
+    // record-progress stops firing entirely while paused (the plugin's own
+    // timer is stopped), so record-pause/record-resume also have to call
+    // this directly — otherwise the status text would freeze on whatever it
+    // last said ("Recording…") instead of flipping to "Paused".
+    recordPlugin.on("record-progress", (ms) => {
+      lastRecordMs = ms;
+      renderRecordStatus(false);
+    });
+    recordPlugin.on("record-pause", () => {
+      renderRecordStatus(true);
+      pauseBtnLabel.textContent = "Resume";
+      pauseBtnIconPause.hidden = true;
+      pauseBtnIconResume.hidden = false;
+    });
+    recordPlugin.on("record-resume", () => {
+      renderRecordStatus(false);
+      pauseBtnLabel.textContent = "Pause";
+      pauseBtnIconPause.hidden = false;
+      pauseBtnIconResume.hidden = true;
+    });
+    recordPlugin.on("record-end", (blob) => {
+      const wasDiscard = discardRecording;
+      discardRecording = false;
+      teardownRecordWavesurfer();
+      resetPauseButton();
+      recordStatus.textContent = "";
+      if (wasDiscard) {
+        setCardState("idle");
+      } else {
+        const filename = `recording.${extensionFromMimeType(blob.type)}`;
+        setSource("recording", blob, filename);
+      }
+    });
+
+    await recordPlugin.startRecording();
   } catch (err) {
     statusEl.textContent = `Microphone access failed: ${err.message}`;
+    teardownRecordWavesurfer();
+    setCardState("idle");
   }
 });
 
-pauseBtn.addEventListener("click", () => {
-  if (!mediaRecorder) return;
+recordingCloseBtn.addEventListener("click", () => {
+  if (!recordPlugin) return;
+  discardRecording = true;
+  recordPlugin.stopRecording();
+});
 
-  if (mediaRecorder.state === "recording") {
-    mediaRecorder.pause();
-    recordingAccumulatedMs += Date.now() - recordingSegmentStart;
-    recordingSegmentStart = null;
-    isPaused = true;
-    pauseBtnLabel.textContent = "Resume";
-    pauseBtnIconPause.hidden = true;
-    pauseBtnIconResume.hidden = false;
-    recordBtn.classList.remove("recording");
-  } else if (mediaRecorder.state === "paused") {
-    mediaRecorder.resume();
-    recordingSegmentStart = Date.now();
-    isPaused = false;
-    pauseBtnLabel.textContent = "Pause";
-    pauseBtnIconPause.hidden = false;
-    pauseBtnIconResume.hidden = true;
-    recordBtn.classList.add("recording");
-  }
+proceedBtn.addEventListener("click", () => {
+  if (!recordPlugin) return;
+  discardRecording = false;
+  recordPlugin.stopRecording();
+});
+
+pauseBtn.addEventListener("click", () => {
+  if (!recordPlugin) return;
+  if (recordPlugin.isRecording()) recordPlugin.pauseRecording();
+  else if (recordPlugin.isPaused()) recordPlugin.resumeRecording();
 });
 
 function parseFilename(contentDisposition) {
