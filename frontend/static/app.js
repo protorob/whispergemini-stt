@@ -226,10 +226,19 @@ function extensionFromMimeType(mimeType) {
   return "webm";
 }
 
+// The `hidden` IDL property doesn't reflect onto the `hidden` content
+// attribute for inline <svg> elements the way it does for HTML elements —
+// setting `svgEl.hidden = true` silently no-ops, leaving the icon visible.
+// Toggling the attribute directly works for both.
+function setIconHidden(el, hidden) {
+  if (hidden) el.setAttribute("hidden", "");
+  else el.removeAttribute("hidden");
+}
+
 function setSourcePlayState(isPlaying) {
   sourcePlayLabel.textContent = isPlaying ? "Pause" : "Play";
-  sourcePlayIconPlay.hidden = isPlaying;
-  sourcePlayIconPause.hidden = !isPlaying;
+  setIconHidden(sourcePlayIconPlay, isPlaying);
+  setIconHidden(sourcePlayIconPause, !isPlaying);
 }
 
 function teardownSourceWavesurfer() {
@@ -343,8 +352,8 @@ async function handleFileSelected(file) {
 
 function resetPauseButton() {
   pauseBtnLabel.textContent = "Pause";
-  pauseBtnIconPause.hidden = false;
-  pauseBtnIconResume.hidden = true;
+  setIconHidden(pauseBtnIconPause, false);
+  setIconHidden(pauseBtnIconResume, true);
 }
 
 function teardownRecordWavesurfer() {
@@ -394,14 +403,14 @@ recordBtn.addEventListener("click", async () => {
     recordPlugin.on("record-pause", () => {
       renderRecordStatus(true);
       pauseBtnLabel.textContent = "Resume";
-      pauseBtnIconPause.hidden = true;
-      pauseBtnIconResume.hidden = false;
+      setIconHidden(pauseBtnIconPause, true);
+      setIconHidden(pauseBtnIconResume, false);
     });
     recordPlugin.on("record-resume", () => {
       renderRecordStatus(false);
       pauseBtnLabel.textContent = "Pause";
-      pauseBtnIconPause.hidden = false;
-      pauseBtnIconResume.hidden = true;
+      setIconHidden(pauseBtnIconPause, false);
+      setIconHidden(pauseBtnIconResume, true);
     });
     recordPlugin.on("record-end", (blob) => {
       const wasDiscard = discardRecording;
@@ -745,8 +754,8 @@ async function copyTextToClipboard(text) {
 
 function resetCopyButton() {
   enhanceCopyLabel.textContent = "Copy";
-  enhanceCopyIconCopy.hidden = false;
-  enhanceCopyIconCheck.hidden = true;
+  setIconHidden(enhanceCopyIconCopy, false);
+  setIconHidden(enhanceCopyIconCheck, true);
 }
 
 enhanceCopyBtn.addEventListener("click", async () => {
@@ -754,8 +763,8 @@ enhanceCopyBtn.addEventListener("click", async () => {
   try {
     await copyTextToClipboard(lastEnhancedMarkdown);
     enhanceCopyLabel.textContent = "Copied!";
-    enhanceCopyIconCopy.hidden = true;
-    enhanceCopyIconCheck.hidden = false;
+    setIconHidden(enhanceCopyIconCopy, true);
+    setIconHidden(enhanceCopyIconCheck, false);
     setTimeout(resetCopyButton, 1500);
   } catch (err) {
     enhanceStatus.textContent = `Error: ${err.message}`;
