@@ -492,6 +492,14 @@ async function ensureModelReady(modelSize) {
     if (!statusRes.ok) continue;
     data = await statusRes.json().catch(() => data);
 
+    if (data.status === "interrupted") {
+      downloadProgressBar.removeAttribute("value");
+      const partialText = data.downloaded_mb != null ? ` (${data.downloaded_mb} / ${data.total_mb} MB cached)` : "";
+      downloadProgressLabel.textContent = `Download of "${data.model}" was interrupted${partialText}. Try transcribing again to resume.`;
+      downloadProgressDetail.textContent = "";
+      break;
+    }
+
     const now = Date.now();
     const elapsedSec = Math.floor((now - startTime) / 1000);
     let speedText = "";
@@ -515,7 +523,7 @@ async function ensureModelReady(modelSize) {
     }
   }
 
-  downloadProgress.hidden = true;
+  if (data.status !== "interrupted") downloadProgress.hidden = true;
 }
 
 transcribeBtn.addEventListener("click", async () => {

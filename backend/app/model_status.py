@@ -65,17 +65,21 @@ def _total_bytes(repo_id: str) -> int | None:
 
 
 def is_ready(repo_id: str) -> bool:
-    """A model is "ready" once its model.bin snapshot symlink resolves.
+    """A model is "ready" once every wanted file in a snapshot has a resolved symlink.
 
-    Hugging Face's cache downloads into blobs/<hash>.<rand>.incomplete and
-    only renames it to the final blobs/<hash> (which snapshots/*/model.bin
-    symlinks to) once the download completes — so this is a reliable
-    "fully downloaded" signal without needing to track individual files.
+    HF downloads into blobs/<hash>.<rand>.incomplete and only renames to the
+    final blobs/<hash> (which snapshots/*/file symlinks point to) once the
+    transfer completes — so a resolving symlink is the reliable "fully
+    downloaded" signal for each individual file.
     """
     snapshots_dir = _repo_cache_dir(repo_id) / "snapshots"
     if not snapshots_dir.exists():
         return False
-    return any((snap / "model.bin").exists() for snap in snapshots_dir.iterdir())
+    for snap in snapshots_dir.iterdir():
+        wanted = [f for f in snap.iterdir() if _is_wanted_file(f.name)]
+        if wanted and all(f.exists() for f in wanted):
+            return True
+    return False
 
 
 def status_for(model_size: str) -> dict:
@@ -86,9 +90,23 @@ def status_for(model_size: str) -> dict:
 
     downloaded = _downloaded_bytes(repo_id)
     total = _total_bytes(repo_id)
+    active = repo_id in _warming
 
-    if downloaded == 0 and repo_id not in _warming:
+    if downloaded == 0 and not active:
         return {"status": "not_started", "downloaded_mb": 0, "total_mb": _mb(total), "percent": None}
+
+    if downloaded > 0 and not active:
+        # Partial blobs on disk but no warm-up thread running — a previous
+        # download was interrupted.  HF will resume from this offset on the
+        # next warm-up attempt, so we surface this as a distinct state rather
+        # than a frozen "downloading" indicator.
+        percent = min(99, round(downloaded / total * 100)) if total else None
+        return {
+            "status": "interrupted",
+            "downloaded_mb": _mb(downloaded),
+            "total_mb": _mb(total),
+            "percent": percent,
+        }
 
     percent = min(99, round(downloaded / total * 100)) if total else None
     return {
