@@ -4,11 +4,13 @@ from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.audio import AudioNormalizationError, normalize_to_wav
 from app.config import settings
+from app.engines.base import Segment
 from app.engines.faster_whisper_engine import FasterWhisperEngine
 from app.enhance import (
     CREATIVITY_PRESETS,
@@ -175,15 +177,22 @@ async def transcribe(
         input_path = Path(tmp_in.name)
 
     try:
-        wav_path = normalize_to_wav(input_path)
+        wav_path = await run_in_threadpool(normalize_to_wav, input_path)
     except AudioNormalizationError as exc:
         raise HTTPException(status_code=400, detail=f"could not decode audio: {exc}") from exc
     finally:
         input_path.unlink(missing_ok=True)
 
-    try:
+    def _run_transcription() -> list[Segment]:
         transcriber = get_parakeet_engine() if engine == "parakeet" else get_faster_whisper_engine(model_size)
-        segments = transcriber.transcribe(wav_path, language=language or None)
+        return transcriber.transcribe(wav_path, language=language or None)
+
+    try:
+        # ffmpeg normalization and the model's transcribe() call are both
+        # blocking, CPU/GPU-bound work — running them inline in this async
+        # endpoint would freeze the whole event loop (and every other
+        # request, including /api/models/status polling) until they finish.
+        segments = await run_in_threadpool(_run_transcription)
     finally:
         wav_path.unlink(missing_ok=True)
 

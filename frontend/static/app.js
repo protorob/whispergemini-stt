@@ -458,12 +458,12 @@ async function ensureModelReady(modelSize) {
     fd.append("model", modelSize);
     res = await fetch("/api/models/warmup", { method: "POST", body: fd });
   } catch (err) {
-    return;
+    return { ready: true }; // can't reach the endpoint; let /api/transcribe surface the real error
   }
-  if (!res.ok) return;
+  if (!res.ok) return { ready: true };
 
   let data = await res.json().catch(() => null);
-  if (!data || data.status === "ready") return;
+  if (!data || data.status === "ready") return { ready: true };
 
   downloadProgress.hidden = false;
   downloadProgressLabel.textContent = `Downloading model "${data.model}"…`;
@@ -495,9 +495,10 @@ async function ensureModelReady(modelSize) {
     if (data.status === "interrupted") {
       downloadProgressBar.removeAttribute("value");
       const partialText = data.downloaded_mb != null ? ` (${data.downloaded_mb} / ${data.total_mb} MB cached)` : "";
-      downloadProgressLabel.textContent = `Download of "${data.model}" was interrupted${partialText}. Try transcribing again to resume.`;
+      const message = `Download of "${data.model}" was interrupted${partialText}. Try transcribing again to resume.`;
+      downloadProgressLabel.textContent = message;
       downloadProgressDetail.textContent = "";
-      break;
+      return { ready: false, message };
     }
 
     const now = Date.now();
@@ -523,7 +524,11 @@ async function ensureModelReady(modelSize) {
     }
   }
 
-  if (data.status !== "interrupted") downloadProgress.hidden = true;
+  downloadProgress.hidden = true;
+  if (data.status !== "ready") {
+    return { ready: false, message: `Model "${data.model}" is still downloading. Try transcribing again shortly.` };
+  }
+  return { ready: true };
 }
 
 transcribeBtn.addEventListener("click", async () => {
@@ -535,7 +540,12 @@ transcribeBtn.addEventListener("click", async () => {
 
   if (engineSelect.value === "faster-whisper") {
     setBusyStatus(statusEl, "Checking model availability…");
-    await ensureModelReady(modelSelect.value);
+    const modelReady = await ensureModelReady(modelSelect.value);
+    if (!modelReady.ready) {
+      statusEl.textContent = modelReady.message;
+      transcribeBtn.disabled = false;
+      return;
+    }
   }
 
   const formData = new FormData();
