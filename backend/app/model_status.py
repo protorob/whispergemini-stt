@@ -14,6 +14,7 @@ _total_bytes_cache: dict[str, int | None] = {}
 _total_bytes_lock = threading.Lock()
 
 _warming: set[str] = set()
+_errors: dict[str, str] = {}
 _warming_lock = threading.Lock()
 
 
@@ -90,7 +91,21 @@ def status_for(model_size: str) -> dict:
 
     downloaded = _downloaded_bytes(repo_id)
     total = _total_bytes(repo_id)
-    active = repo_id in _warming
+    with _warming_lock:
+        active = repo_id in _warming
+        error = _errors.get(repo_id)
+
+    if error and not active:
+        # The warm-up thread raised — surface the real reason (e.g. a
+        # Windows symlink-privilege error) instead of leaving the frontend
+        # to poll "not_started"/"downloading" forever with no explanation.
+        return {
+            "status": "error",
+            "message": error,
+            "downloaded_mb": _mb(downloaded),
+            "total_mb": _mb(total),
+            "percent": None,
+        }
 
     if downloaded == 0 and not active:
         return {"status": "not_started", "downloaded_mb": 0, "total_mb": _mb(total), "percent": None}
@@ -130,10 +145,15 @@ def warm_up(model_size: str, load_fn) -> None:
         if repo_id in _warming or is_ready(repo_id):
             return
         _warming.add(repo_id)
+        _errors.pop(repo_id, None)
 
     def _run():
         try:
             load_fn()
+        except Exception as exc:
+            with _warming_lock:
+                _errors[repo_id] = str(exc) or exc.__class__.__name__
+            raise
         finally:
             with _warming_lock:
                 _warming.discard(repo_id)

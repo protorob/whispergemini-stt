@@ -464,6 +464,9 @@ async function ensureModelReady(modelSize) {
 
   let data = await res.json().catch(() => null);
   if (!data || data.status === "ready") return { ready: true };
+  if (data.status === "error") {
+    return { ready: false, message: `Failed to download model "${data.model}": ${data.message}` };
+  }
 
   downloadProgress.hidden = false;
   downloadProgressLabel.textContent = `Downloading model "${data.model}"…`;
@@ -491,6 +494,14 @@ async function ensureModelReady(modelSize) {
     }
     if (!statusRes.ok) continue;
     data = await statusRes.json().catch(() => data);
+
+    if (data.status === "error") {
+      downloadProgressBar.removeAttribute("value");
+      const message = `Failed to download model "${data.model}": ${data.message}`;
+      downloadProgressLabel.textContent = message;
+      downloadProgressDetail.textContent = "";
+      return { ready: false, message };
+    }
 
     if (data.status === "interrupted") {
       downloadProgressBar.removeAttribute("value");
