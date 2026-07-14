@@ -66,20 +66,32 @@ def _total_bytes(repo_id: str) -> int | None:
 
 
 def is_ready(repo_id: str) -> bool:
-    """A model is "ready" once every wanted file in a snapshot has a resolved symlink.
+    """A model is "ready" once every required file exists in a snapshot dir.
 
     HF downloads into blobs/<hash>.<rand>.incomplete and only renames to the
-    final blobs/<hash> (which snapshots/*/file symlinks point to) once the
-    transfer completes — so a resolving symlink is the reliable "fully
-    downloaded" signal for each individual file.
+    final blobs/<hash> (which snapshots/*/file symlinks or copies point to)
+    once the transfer completes — so a resolving snapshot entry is a
+    reliable "fully downloaded" signal for each individual file.
+
+    Files download in parallel, and small ones (config.json, tokenizer.json,
+    vocabulary.*) land in seconds while model.bin (multi-GB) is still
+    transferring. Building the "wanted" set from whatever's *currently* in
+    the snapshot directory — rather than the fixed set of files a model
+    actually needs — would report "ready" the moment those small files
+    exist, even though model.bin hasn't shown up at all yet. So we check
+    presence of every required filename explicitly instead.
     """
     snapshots_dir = _repo_cache_dir(repo_id) / "snapshots"
     if not snapshots_dir.exists():
         return False
     for snap in snapshots_dir.iterdir():
-        wanted = [f for f in snap.iterdir() if _is_wanted_file(f.name)]
-        if wanted and all(f.exists() for f in wanted):
-            return True
+        if not snap.is_dir():
+            continue
+        if not all((snap / name).exists() for name in _ALLOWED_FILES):
+            continue
+        if not any(f.name.startswith(_ALLOWED_PREFIXES) for f in snap.iterdir()):
+            continue
+        return True
     return False
 
 
