@@ -21,6 +21,13 @@ FORMATTING_RULE = (
     "items) using Markdown syntax. Fix punctuation and capitalization."
 )
 
+LANGUAGE_RULE = (
+    "Write your entire output in the same language as the original "
+    "transcript. Detect that language yourself from the transcript text — "
+    "do not switch to English or any other language, even if the style "
+    "instructions below are written in English."
+)
+
 OUTPUT_RULE = (
     "Output only the formatted Markdown document itself, with no "
     "commentary, preamble, or explanation before or after it."
@@ -115,7 +122,7 @@ def _build_system_prompt(creativity: str, custom_style: str | None) -> tuple[str
         return (
             f"You are formatting a raw speech-to-text transcript into a clean, "
             f"readable document for a blog article draft.\n\n{FORMATTING_RULE}\n\n"
-            f"{instruction}\n\n{GROUNDING_RULE}\n\n{OUTPUT_RULE}"
+            f"{instruction}\n\n{GROUNDING_RULE}\n\n{LANGUAGE_RULE}\n\n{OUTPUT_RULE}"
         ), 0.7
 
     preset = CREATIVITY_PRESETS.get(creativity)
@@ -127,7 +134,7 @@ def _build_system_prompt(creativity: str, custom_style: str | None) -> tuple[str
     prompt = (
         f"You are formatting a raw speech-to-text transcript into a clean, "
         f"readable document for a blog article draft.\n\n{FORMATTING_RULE}\n\n"
-        f"{preset.instruction}\n\n{GROUNDING_RULE}\n\n{OUTPUT_RULE}"
+        f"{preset.instruction}\n\n{GROUNDING_RULE}\n\n{LANGUAGE_RULE}\n\n{OUTPUT_RULE}"
     )
     return prompt, preset.temperature
 
