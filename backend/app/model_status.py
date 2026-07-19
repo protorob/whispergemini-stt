@@ -10,6 +10,14 @@ from huggingface_hub.constants import HF_HUB_CACHE
 _ALLOWED_FILES = {"config.json", "preprocessor_config.json", "model.bin", "tokenizer.json"}
 _ALLOWED_PREFIXES = ("vocabulary.",)
 
+# Files every faster-whisper repo ships, used by is_ready() below. Unlike
+# _ALLOWED_FILES (used for download-size bookkeeping), this must NOT include
+# preprocessor_config.json: that file only exists in some repos (e.g.
+# large-v3), not tiny/base/small/medium, so requiring it unconditionally
+# would make is_ready() report "not ready" forever for those sizes even
+# after a complete download.
+_REQUIRED_FILES = {"config.json", "model.bin", "tokenizer.json"}
+
 _total_bytes_cache: dict[str, int | None] = {}
 _total_bytes_lock = threading.Lock()
 
@@ -87,7 +95,7 @@ def is_ready(repo_id: str) -> bool:
     for snap in snapshots_dir.iterdir():
         if not snap.is_dir():
             continue
-        if not all((snap / name).exists() for name in _ALLOWED_FILES):
+        if not all((snap / name).exists() for name in _REQUIRED_FILES):
             continue
         if not any(f.name.startswith(_ALLOWED_PREFIXES) for f in snap.iterdir()):
             continue

@@ -1,0 +1,4 @@
+# Build-only tooling for the standalone desktop package (packaging/pyinstaller/
+# whisperstt.spec). Not a runtime dependency — install on top of
+# backend/requirements.txt only when building the desktop app.
+pyinstaller

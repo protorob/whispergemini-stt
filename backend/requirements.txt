@@ -6,3 +6,5 @@ odfpy
 google-genai
 pypandoc-binary
 python-dotenv
+imageio-ffmpeg
+pywebview

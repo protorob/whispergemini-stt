@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 from functools import lru_cache
 from pathlib import Path
@@ -24,8 +25,13 @@ from app.hardware import MODEL_SIZES
 from app.markdown_odt import MarkdownConversionError, markdown_to_odt
 from app.model_status import status_for, warm_up
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-FRONTEND_DIR = BASE_DIR / "frontend"
+if getattr(sys, "frozen", False):
+    # Running from a PyInstaller bundle: resources live under _MEIPASS,
+    # not alongside this source file's on-disk location.
+    FRONTEND_DIR = Path(sys._MEIPASS) / "frontend"
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    FRONTEND_DIR = BASE_DIR / "frontend"
 
 app = FastAPI(title="am-whisper-stt")
 
