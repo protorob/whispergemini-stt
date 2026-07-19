@@ -107,12 +107,20 @@ def _webview2_installer_path() -> Path | None:
     return installer if installer.exists() else None
 
 
-def _show_window(url: str) -> None:
+def _show_window(url: str, storage_dir: Path) -> None:
     import webview
 
     webview.create_window("Whisper STT", url, width=1100, height=800)
+
+    # pywebview defaults to private_mode=True (no persisted cookies/local
+    # storage at all), which would silently reset the Gemini key, HF token,
+    # and mic device choice — all stored via the frontend's localStorage —
+    # on every relaunch. storage_dir keeps that persisted state inside the
+    # same portable data/ folder as the model cache, so it travels with the
+    # app rather than living in some fixed spot on whichever PC ran it.
+    start_kwargs = {"private_mode": False, "storage_path": str(storage_dir)}
     try:
-        webview.start()
+        webview.start(**start_kwargs)
         return
     except Exception:
         pass
@@ -127,7 +135,7 @@ def _show_window(url: str) -> None:
     import subprocess
 
     subprocess.run([str(installer), "/silent", "/install"], check=True)
-    webview.start()
+    webview.start(**start_kwargs)
 
 
 def main() -> None:
@@ -154,8 +162,11 @@ def main() -> None:
     )
     threading.Thread(target=server.run, daemon=True).start()
 
+    webview_storage_dir = data_dir / "webview-storage"
+    webview_storage_dir.mkdir(parents=True, exist_ok=True)
+
     try:
-        _show_window(f"http://127.0.0.1:{port}")
+        _show_window(f"http://127.0.0.1:{port}", webview_storage_dir)
     finally:
         server.should_exit = True
 

@@ -9,6 +9,11 @@ const stateUploading = document.getElementById("state-uploading");
 const stateReview = document.getElementById("state-review");
 const dropzone = document.getElementById("dropzone");
 const recordBtn = document.getElementById("record-btn");
+const micSelect = document.getElementById("mic-select");
+const settingsToggleBtn = document.getElementById("settings-toggle-btn");
+const settingsPanel = document.getElementById("settings-panel");
+const settingsCloseBtn = document.getElementById("settings-close-btn");
+const hfTokenInput = document.getElementById("hf-token-input");
 const recordingCloseBtn = document.getElementById("recording-close-btn");
 const recordStatus = document.getElementById("record-status");
 const pauseBtn = document.getElementById("pause-btn");
@@ -162,6 +167,36 @@ const savedGeminiKey = localStorage.getItem("gemini_api_key");
 if (savedGeminiKey) geminiApiKeyInput.value = savedGeminiKey;
 geminiApiKeyInput.addEventListener("input", () => {
   localStorage.setItem("gemini_api_key", geminiApiKeyInput.value);
+});
+
+settingsToggleBtn.addEventListener("click", () => {
+  settingsPanel.hidden = !settingsPanel.hidden;
+});
+settingsCloseBtn.addEventListener("click", () => {
+  settingsPanel.hidden = true;
+});
+
+// The HF token isn't attached per-request like the Gemini key (model
+// downloads happen server-side, not as part of a request the frontend
+// makes), so it's synced to the running server via its own endpoint
+// instead — huggingface_hub reads HF_TOKEN from the environment fresh on
+// every call, so this takes effect immediately, no server restart needed.
+function syncHfToken(token) {
+  const fd = new FormData();
+  fd.append("token", token);
+  fetch("/api/settings/hf-token", { method: "POST", body: fd }).catch(() => {});
+}
+
+const savedHfToken = localStorage.getItem("hf_token");
+if (savedHfToken) {
+  hfTokenInput.value = savedHfToken;
+  syncHfToken(savedHfToken);
+}
+hfTokenInput.addEventListener("input", () => {
+  localStorage.setItem("hf_token", hfTokenInput.value);
+});
+hfTokenInput.addEventListener("change", () => {
+  syncHfToken(hfTokenInput.value);
 });
 
 const savedCustomStyle = localStorage.getItem("gemini_custom_style");
@@ -352,10 +387,52 @@ function clearSource() {
 deleteSourceBtn.addEventListener("click", clearSource);
 reviewCloseBtn.addEventListener("click", clearSource);
 
-// Click-to-browse anywhere in the dropzone, except the mic button (which has
-// its own action) — its click would otherwise bubble up and fire both.
+// Populates the microphone dropdown via the RecordPlugin helper (rather
+// than calling navigator.mediaDevices.enumerateDevices() directly — same
+// thing, but this stays in sync with whatever the plugin itself will use).
+// Device labels are only populated by the browser once mic permission has
+// actually been granted at least once, so the very first call here — before
+// any recording has happened — will likely show generic entries; the
+// refresh after a successful startRecording() below fills in real labels.
+async function refreshMicList() {
+  let devices;
+  try {
+    devices = await RecordPlugin.getAvailableAudioDevices();
+  } catch {
+    return;
+  }
+  const previousValue = micSelect.value;
+  micSelect.innerHTML = "";
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = "Default microphone";
+  micSelect.appendChild(defaultOption);
+  devices.forEach((device, i) => {
+    const opt = document.createElement("option");
+    opt.value = device.deviceId;
+    opt.textContent = device.label || `Microphone ${i + 1}`;
+    micSelect.appendChild(opt);
+  });
+  const savedDeviceId = localStorage.getItem("mic_device_id");
+  const candidates = [previousValue, savedDeviceId];
+  const restored = candidates.find((v) => v && [...micSelect.options].some((o) => o.value === v));
+  if (restored) micSelect.value = restored;
+}
+
+refreshMicList();
+navigator.mediaDevices?.addEventListener?.("devicechange", refreshMicList);
+micSelect.addEventListener("change", () => {
+  localStorage.setItem("mic_device_id", micSelect.value);
+});
+// The mic dropdown lives inside the dropzone, so its own clicks need the
+// same exclusion the record button already gets below (otherwise opening
+// the dropdown would also fire the dropzone's click-to-browse handler).
+
+// Click-to-browse anywhere in the dropzone, except the mic button and mic
+// select (which have their own actions) — their clicks would otherwise
+// bubble up and fire both.
 dropzone.addEventListener("click", (event) => {
-  if (event.target.closest("#record-btn")) return;
+  if (event.target.closest("#record-btn") || event.target.closest("#mic-select")) return;
   fileInput.click();
 });
 
@@ -489,7 +566,10 @@ recordBtn.addEventListener("click", async () => {
       }
     });
 
-    await recordPlugin.startRecording();
+    const deviceId = micSelect.value;
+    await recordPlugin.startRecording(deviceId ? { deviceId: { exact: deviceId } } : undefined);
+    // Labels are only available post-permission — refresh now that it's granted.
+    refreshMicList();
   } catch (err) {
     statusEl.textContent = `Microphone access failed: ${err.message}`;
     teardownRecordWavesurfer();

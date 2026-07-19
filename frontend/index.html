@@ -55,10 +55,33 @@
       <line x1="18" y1="6" x2="6" y2="18"/>
       <line x1="6" y1="6" x2="18" y2="18"/>
     </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </symbol>
   </svg>
   <main>
-    <h1>am-whisper-stt</h1>
+    <div class="page-header">
+      <h1>am-whisper-stt</h1>
+      <button type="button" id="settings-toggle-btn" class="settings-toggle-btn" aria-label="Settings">
+        <svg class="btn-icon" aria-hidden="true"><use href="#icon-settings"></use></svg>
+      </button>
+    </div>
     <p class="subtitle">Upload an audio file or record from your mic, then transcribe.</p>
+
+    <section id="settings-panel" class="settings-panel" hidden>
+      <h2>Settings</h2>
+      <label>
+        Hugging Face token <span class="settings-hint">(optional — avoids download rate limits/failures on larger models)</span>
+        <input type="password" id="hf-token-input" placeholder="hf_..." autocomplete="off" />
+      </label>
+      <label>
+        Gemini API key <span class="settings-hint">(used by "Format with AI" below)</span>
+        <input type="password" id="gemini-api-key" placeholder="Your Gemini API key" autocomplete="off" />
+      </label>
+      <p class="settings-hint">Stored only in this browser — the Hugging Face token is also sent to this app's own local server (never to a third party) so it can use it for model downloads.</p>
+      <button type="button" id="settings-close-btn" class="btn btn-secondary">Close</button>
+    </section>
 
     <section class="source-card card-idle" id="source-card">
       <input type="file" id="file-input" accept="audio/*,video/*" hidden />
@@ -68,6 +91,9 @@
         <div id="dropzone" class="dropzone">
           <p class="dropzone-label">Drop audio/video file, or click to browse.</p>
           <p class="dropzone-or">or use your microphone.</p>
+          <select id="mic-select" class="mic-select" aria-label="Microphone">
+            <option value="">Default microphone</option>
+          </select>
           <button type="button" id="record-btn" class="mic-btn" aria-label="Record from microphone">
             <svg class="btn-icon" aria-hidden="true"><use href="#icon-mic"></use></svg>
           </button>
@@ -186,15 +212,12 @@
       <p class="enhance-subtitle">
         Sends the transcript to Google's Gemini API to add structure (headings, paragraphs,
         lists) and fix obvious transcription errors. The transcript above is never modified.
-        Your API key is stored only in this browser (localStorage), never on the server. At
-        every creativity level, Gemini is instructed not to invent facts, claims, or details
-        that weren't in the original transcript — creativity only changes <em>how</em> it's
-        expressed, never <em>what</em> content exists.
+        Your API key (set in Settings — the gear icon, top right) is stored only in this
+        browser (localStorage), never on the server. At every creativity level, Gemini is
+        instructed not to invent facts, claims, or details that weren't in the original
+        transcript — creativity only changes <em>how</em> it's expressed, never <em>what</em>
+        content exists.
       </p>
-      <label>
-        Gemini API key
-        <input type="password" id="gemini-api-key" placeholder="Your Gemini API key" autocomplete="off" />
-      </label>
       <label>
         Creativity
         <select id="creativity-select">

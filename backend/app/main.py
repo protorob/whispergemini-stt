@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 from functools import lru_cache
@@ -80,6 +81,21 @@ def resolve_model_size(model: str) -> str:
 
 @app.get("/api/health")
 def health():
+    return {"status": "ok"}
+
+
+@app.post("/api/settings/hf-token")
+def set_hf_token(token: str = Form(default="")):
+    """Applies a Hugging Face token to the running process immediately —
+    huggingface_hub reads HF_TOKEN from the environment fresh on every
+    call (see huggingface_hub.utils._auth._get_token_from_environment),
+    it isn't cached at import time, so no restart is needed.
+    """
+    token = token.strip()
+    if token:
+        os.environ["HF_TOKEN"] = token
+    else:
+        os.environ.pop("HF_TOKEN", None)
     return {"status": "ok"}
 
 
