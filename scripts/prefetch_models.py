@@ -5,12 +5,14 @@ into packaging/models_staging/bundled/ in a form the PyInstaller build can
 embed directly. The runtime counterpart that seeds this into a fresh
 HF_HUB_CACHE on first launch lives in backend/app/desktop.py.
 
-Must run somewhere real filesystem symlinks work (Linux/macOS, or Windows
-with Developer Mode) — huggingface_hub's cache uses symlinks from
-snapshots/<commit>/<file> to blobs/<hash>, and the compaction step below
-relies on resolving those to get each blob's real hash-named file.
+Blob identity is a sha256 of each file's own content (computed here), not
+huggingface_hub's internal blob-hash filename — this deliberately avoids
+depending on real symlinks existing in the source snapshot dir, since
+Windows without Developer Mode/admin falls back to plain file copies
+there, not symlinks.
 """
 
+import hashlib
 import json
 import shutil
 import sys
@@ -42,6 +44,14 @@ def _download(model_size: str) -> tuple[str, Path]:
     return repo_id, Path(snapshot_dir)
 
 
+def _hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _compact(repo_id: str, snapshot_dir: Path) -> Path:
     repo_bundle_dir = BUNDLE_DIR / repo_id.replace("/", "--")
     blobs_dir = repo_bundle_dir / "blobs"
@@ -49,18 +59,12 @@ def _compact(repo_id: str, snapshot_dir: Path) -> Path:
 
     manifest: dict[str, str] = {}
     for entry in sorted(snapshot_dir.iterdir()):
-        if not entry.is_symlink():
-            raise RuntimeError(
-                f"{entry} is a plain file, not a symlink into the blob store. "
-                "This script must run where real symlinks work (Linux/macOS, "
-                "or Windows with Developer Mode enabled) — huggingface_hub "
-                "silently falls back to plain copies otherwise, which breaks "
-                "the blob-hash-based compaction below."
-            )
-        blob_hash = entry.resolve().name
+        if not entry.is_file():  # follows symlinks transparently when present
+            continue
+        blob_hash = _hash_file(entry)
         dest = blobs_dir / blob_hash
         if not dest.exists():
-            shutil.copy2(entry.resolve(), dest)
+            shutil.copy2(entry, dest)  # copies target content, not the link itself
         manifest[entry.name] = blob_hash
 
     commit_sha = snapshot_dir.name  # snapshot dirs are named after the resolved commit
