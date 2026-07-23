@@ -16,6 +16,9 @@ formatting.
 - Automatically detects your hardware (GPU/CPU/RAM) and picks a sensible
   default model — or pick one manually
 - Output as plain text, Markdown, SRT subtitles, or ODT
+- Automatic paragraph breaks wherever Whisper detects a pause, with an
+  adjustable **Paragraph breaks** sensitivity (short/normal/long) — the
+  same pauses are also marked directly on the audio waveform
 - Transcript preview is directly editable before you download it
 - Optional "Format with AI" pass (Gemini) that turns a raw transcript into
   clean Markdown, with an adjustable creativity level, without inventing
@@ -60,7 +63,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Visit **http://localhost:8000**.
+Visit **http://localhost:8000**. Add `--port 8001` (or any other free port)
+if 8000 is already taken by something else.
 
 ### Option B — Local Python (Windows)
 
@@ -75,7 +79,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Visit **http://localhost:8000**.
+Visit **http://localhost:8000**. Add `--port 8001` (or any other free port)
+if 8000 is already taken by something else.
 
 > **Windows note:** the first time a model downloads, Windows may block
 > the cache from creating symlinks unless Developer Mode is turned on
@@ -87,15 +92,19 @@ Visit **http://localhost:8000**.
 1. **Upload** a file or **record** from your microphone.
 2. Pick an **engine** (faster-whisper, or Parakeet if a compatible GPU is
    detected), **language** (or leave on auto-detect), **output format**,
-   and **model** (or leave on "Auto" to use the recommended one for your
-   hardware).
+   **model** (or leave on "Auto" to use the recommended one for your
+   hardware), and **Paragraph breaks** sensitivity (how long a pause
+   should start a new paragraph — see the hint under the dropdown for
+   what each level does).
 3. Click **Transcribe**.
    - If the selected model hasn't been downloaded yet, you'll see a real
      progress bar first — this only happens once per model, per machine.
-4. Once done, the transcript appears in an **editable preview**. Edit it
-   if you like, then download it, or click **Format with AI** to send it
-   to Gemini for a cleaned-up Markdown version (paste your API key the
-   first time — it's stored only in your browser).
+4. Once done, the transcript appears in an **editable preview**, broken
+   into paragraphs wherever Whisper detected a long-enough pause (same
+   pauses are marked on the waveform above). Edit it if you like, then
+   download it, or click **Format with AI** to send it to Gemini for a
+   cleaned-up Markdown version (paste your API key the first time — it's
+   stored only in your browser).
 
 ## Configuration
 
@@ -165,7 +174,8 @@ backend/app/model_status.py    Model download progress tracking
 backend/app/audio.py           ffmpeg-based audio normalization
 backend/app/engines/           Transcription engines (faster-whisper, Parakeet)
 backend/app/enhance.py         Gemini-based AI formatting
-backend/app/formats.py         Output format rendering (txt/md/srt/odt)
+backend/app/formats/           Output format rendering (txt/md/srt/odt) +
+                                pause-based paragraph grouping
 frontend/                      Static HTML/CSS/JS frontend
 ```
 

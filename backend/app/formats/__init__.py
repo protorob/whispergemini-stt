@@ -10,7 +10,7 @@ from app.formats.txt import to_txt
 
 @dataclass
 class OutputFormat:
-    render: Callable[[list[Segment]], str | bytes]
+    render: Callable[[list[Segment], float], str | bytes]
     media_type: str
     extension: str
 

@@ -1,5 +1,6 @@
 import WaveSurfer from "/static/vendor/wavesurfer/wavesurfer.esm.js";
 import RecordPlugin from "/static/vendor/wavesurfer/record.esm.js";
+import RegionsPlugin from "/static/vendor/wavesurfer/regions.esm.js";
 
 const fileInput = document.getElementById("file-input");
 const sourceCard = document.getElementById("source-card");
@@ -36,6 +37,8 @@ const engineSelect = document.getElementById("engine-select");
 const languageSelect = document.getElementById("language-select");
 const formatSelect = document.getElementById("format-select");
 const modelSelect = document.getElementById("model-select");
+const pauseSensitivitySelect = document.getElementById("pause-sensitivity-select");
+const pauseSensitivityHint = document.getElementById("pause-sensitivity-hint");
 const hardwareInfo = document.getElementById("hardware-info");
 const transcribeBtn = document.getElementById("transcribe-btn");
 const downloadProgress = document.getElementById("download-progress");
@@ -66,6 +69,20 @@ const customStyleLabel = document.getElementById("custom-style-label");
 const customStyleInput = document.getElementById("custom-style-input");
 const previewHint = document.getElementById("preview-hint");
 const resetPreviewBtn = document.getElementById("reset-preview-btn");
+
+// Mirrors PAUSE_SENSITIVITY_SECONDS in backend/app/formats/paragraphs.py —
+// keep the gap values mentioned here in sync with that dict.
+const PAUSE_SENSITIVITY_HINTS = {
+  short: "Breaks into a new paragraph after even a brief pause (~0.5s) — more, shorter paragraphs.",
+  normal: "Breaks into a new paragraph after a natural pause (~1s) — a good default for most speech.",
+  long: "Only breaks into a new paragraph after a long pause (~2s) — fewer, longer paragraphs.",
+};
+
+function updatePauseSensitivityHint() {
+  pauseSensitivityHint.textContent = PAUSE_SENSITIVITY_HINTS[pauseSensitivitySelect.value] || "";
+}
+pauseSensitivitySelect.addEventListener("change", updatePauseSensitivityHint);
+updatePauseSensitivityHint();
 
 function setBusyStatus(el, text) {
   el.innerHTML = "";
@@ -139,6 +156,7 @@ let recordWavesurfer = null; // wavesurfer instance backing the live recording w
 let recordPlugin = null; // its RecordPlugin, drives mic capture + pause/resume + record-progress
 let discardRecording = false; // set right before stopRecording() when the close (X) button, not Proceed, ended the session
 let sourceWavesurfer = null; // wavesurfer instance backing the playback waveform for whatever selectedSource currently is
+let sourceRegions = null; // its RegionsPlugin, used to drop pause markers once a transcript comes back
 let selectedSource = null; // { blob, filename }
 let engineLanguageSupport = {}; // engine name -> list of supported codes, or null for unrestricted
 let gpuActive = false; // caps.hardware.gpu_usable, used to seed transcription time estimates
@@ -338,10 +356,27 @@ function teardownSourceWavesurfer() {
     sourceWavesurfer.destroy();
     sourceWavesurfer = null;
   }
+  sourceRegions = null;
+}
+
+// Drops a thin marker line at each pause Whisper detected (paragraph
+// breaks), matching what the transcript preview now shows as blank lines.
+function renderPauseMarkers(pauseMarkers) {
+  if (!sourceRegions) return;
+  sourceRegions.clearRegions();
+  for (const t of pauseMarkers) {
+    sourceRegions.addRegion({
+      start: t,
+      color: cssVar("--danger"),
+      drag: false,
+      resize: false,
+    });
+  }
 }
 
 function loadSourcePreview(blob) {
   teardownSourceWavesurfer();
+  sourceRegions = RegionsPlugin.create();
   sourceWavesurfer = WaveSurfer.create({
     container: sourceWaveformEl,
     waveColor: cssVar("--border"),
@@ -349,6 +384,7 @@ function loadSourcePreview(blob) {
     height: 48,
     barWidth: 2,
     cursorWidth: 0,
+    plugins: [sourceRegions],
   });
   sourceWavesurfer.loadBlob(blob);
   setSourcePlayState(false);
@@ -717,6 +753,7 @@ transcribeBtn.addEventListener("click", async () => {
   const isTextualFormat = formatSelect.value !== "odt";
   formData.append("output_format", formatSelect.value);
   formData.append("engine", engineSelect.value);
+  formData.append("pause_sensitivity", pauseSensitivitySelect.value);
   if (engineSelect.value === "faster-whisper") {
     formData.append("model", modelSelect.value);
   }
@@ -762,6 +799,15 @@ transcribeBtn.addEventListener("click", async () => {
 
     const blob = await res.blob();
     const filename = parseFilename(res.headers.get("Content-Disposition"));
+
+    const pauseMarkersHeader = res.headers.get("X-Pause-Markers");
+    if (pauseMarkersHeader) {
+      try {
+        renderPauseMarkers(JSON.parse(pauseMarkersHeader));
+      } catch {
+        // non-fatal — the transcript itself still came through fine
+      }
+    }
 
     const url = URL.createObjectURL(blob);
     downloadLink.href = url;
