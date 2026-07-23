@@ -1,4 +1,5 @@
 from app.engines.base import Segment
+from app.formats.paragraphs import group_into_paragraphs
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -11,7 +12,8 @@ def _format_timestamp(seconds: float) -> str:
 
 def to_markdown(segments: list[Segment]) -> str:
     lines = []
-    for seg in segments:
-        lines.append(f"**[{_format_timestamp(seg.start)}]** {seg.text}")
+    for para in group_into_paragraphs(segments):
+        text = " ".join(s.text for s in para)
+        lines.append(f"**[{_format_timestamp(para[0].start)}]** {text}")
         lines.append("")
     return "\n".join(lines).strip() + "\n"

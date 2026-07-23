@@ -20,6 +20,7 @@ from app.enhance import (
     stream_format_transcript,
 )
 from app.formats import FORMATS
+from app.formats.paragraphs import group_into_paragraphs
 from app.hardware import MODEL_SIZES
 from app.markdown_odt import MarkdownConversionError, markdown_to_odt
 from app.model_status import status_for, warm_up
@@ -200,10 +201,19 @@ async def transcribe(
     if isinstance(content, str):
         content = content.encode("utf-8")
 
+    # Start-of-paragraph times (seconds), skipping the very first paragraph
+    # since a marker at t=0 isn't useful — lets the frontend drop a marker
+    # on the waveform everywhere Whisper detected a long-enough pause.
+    paragraphs = group_into_paragraphs(segments)
+    pause_markers = [para[0].start for para in paragraphs[1:]]
+
     return Response(
         content=content,
         media_type=fmt.media_type,
-        headers={"Content-Disposition": f'attachment; filename="transcript.{fmt.extension}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="transcript.{fmt.extension}"',
+            "X-Pause-Markers": json.dumps(pause_markers),
+        },
     )
 
 

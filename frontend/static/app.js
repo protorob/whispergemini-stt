@@ -1,5 +1,6 @@
 import WaveSurfer from "/static/vendor/wavesurfer/wavesurfer.esm.js";
 import RecordPlugin from "/static/vendor/wavesurfer/record.esm.js";
+import RegionsPlugin from "/static/vendor/wavesurfer/regions.esm.js";
 
 const fileInput = document.getElementById("file-input");
 const sourceCard = document.getElementById("source-card");
@@ -134,6 +135,7 @@ let recordWavesurfer = null; // wavesurfer instance backing the live recording w
 let recordPlugin = null; // its RecordPlugin, drives mic capture + pause/resume + record-progress
 let discardRecording = false; // set right before stopRecording() when the close (X) button, not Proceed, ended the session
 let sourceWavesurfer = null; // wavesurfer instance backing the playback waveform for whatever selectedSource currently is
+let sourceRegions = null; // its RegionsPlugin, used to drop pause markers once a transcript comes back
 let selectedSource = null; // { blob, filename }
 let engineLanguageSupport = {}; // engine name -> list of supported codes, or null for unrestricted
 let gpuActive = false; // caps.hardware.gpu_usable, used to seed transcription time estimates
@@ -303,10 +305,27 @@ function teardownSourceWavesurfer() {
     sourceWavesurfer.destroy();
     sourceWavesurfer = null;
   }
+  sourceRegions = null;
+}
+
+// Drops a thin marker line at each pause Whisper detected (paragraph
+// breaks), matching what the transcript preview now shows as blank lines.
+function renderPauseMarkers(pauseMarkers) {
+  if (!sourceRegions) return;
+  sourceRegions.clearRegions();
+  for (const t of pauseMarkers) {
+    sourceRegions.addRegion({
+      start: t,
+      color: cssVar("--danger"),
+      drag: false,
+      resize: false,
+    });
+  }
 }
 
 function loadSourcePreview(blob) {
   teardownSourceWavesurfer();
+  sourceRegions = RegionsPlugin.create();
   sourceWavesurfer = WaveSurfer.create({
     container: sourceWaveformEl,
     waveColor: cssVar("--border"),
@@ -314,6 +333,7 @@ function loadSourcePreview(blob) {
     height: 48,
     barWidth: 2,
     cursorWidth: 0,
+    plugins: [sourceRegions],
   });
   sourceWavesurfer.loadBlob(blob);
   setSourcePlayState(false);
@@ -682,6 +702,15 @@ transcribeBtn.addEventListener("click", async () => {
 
     const blob = await res.blob();
     const filename = parseFilename(res.headers.get("Content-Disposition"));
+
+    const pauseMarkersHeader = res.headers.get("X-Pause-Markers");
+    if (pauseMarkersHeader) {
+      try {
+        renderPauseMarkers(JSON.parse(pauseMarkersHeader));
+      } catch {
+        // non-fatal — the transcript itself still came through fine
+      }
+    }
 
     const url = URL.createObjectURL(blob);
     downloadLink.href = url;
