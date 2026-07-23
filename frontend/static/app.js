@@ -70,6 +70,59 @@ function setBusyStatus(el, text) {
   el.appendChild(document.createTextNode(text));
 }
 
+// h:mm:ss once past an hour, m:ss otherwise — plain "NNNs" stops being
+// readable a couple minutes into a long transcription.
+function formatDuration(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+// Transcription has no real progress signal (see the timer comment below),
+// so an ETA has to come from a throughput estimate: seconds of processing
+// per second of audio ("RTF"), applied to this file's known duration.
+// Seeded with rough guesses per model/hardware tier, then replaced by an
+// exponential moving average of this machine's own observed runs (stored
+// per engine+model in localStorage) — the seed only matters for the very
+// first transcription of a given engine/model combo.
+const RTF_STORAGE_KEY = "sttRtfHistoryV1";
+const DEFAULT_RTF = {
+  gpu: { tiny: 0.05, base: 0.08, small: 0.15, medium: 0.3, "large-v3": 0.5 },
+  cpu: { tiny: 0.3, base: 0.5, small: 1.0, medium: 2.5, "large-v3": 5.0 },
+};
+
+function loadRtfHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(RTF_STORAGE_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function estimateRtf(engine, model, gpuActive) {
+  const history = loadRtfHistory();
+  const key = `${engine}:${model}`;
+  if (history[key]) return { rtf: history[key], calibrated: true };
+  const table = gpuActive ? DEFAULT_RTF.gpu : DEFAULT_RTF.cpu;
+  const fallback = gpuActive ? 0.3 : 2.0;
+  return { rtf: table[model] ?? fallback, calibrated: false };
+}
+
+function recordRtf(engine, model, rtf) {
+  if (!Number.isFinite(rtf) || rtf <= 0) return;
+  const history = loadRtfHistory();
+  const key = `${engine}:${model}`;
+  history[key] = history[key] ? history[key] * 0.7 + rtf * 0.3 : rtf;
+  try {
+    localStorage.setItem(RTF_STORAGE_KEY, JSON.stringify(history));
+  } catch {
+    // localStorage unavailable (private browsing, quota) — estimates just won't persist across sessions.
+  }
+}
+
 // Wavesurfer's waveColor/progressColor options need a literal color, not a
 // CSS custom property reference — a canvas fillStyle can't resolve var(...)
 // itself, so this resolves it once against the current theme at instantiation.
@@ -83,6 +136,8 @@ let discardRecording = false; // set right before stopRecording() when the close
 let sourceWavesurfer = null; // wavesurfer instance backing the playback waveform for whatever selectedSource currently is
 let selectedSource = null; // { blob, filename }
 let engineLanguageSupport = {}; // engine name -> list of supported codes, or null for unrestricted
+let gpuActive = false; // caps.hardware.gpu_usable, used to seed transcription time estimates
+let autoDefaultModel = null; // the concrete model size "auto" currently resolves to, per /api/capabilities
 
 // The source card is a single element showing one of these four states at a
 // time — idle (drop/record entry point), recording (live waveform), a brief
@@ -179,6 +234,7 @@ fetch("/api/capabilities")
   .then((res) => res.json())
   .then((caps) => {
     const auto = caps.auto_default;
+    autoDefaultModel = auto.model;
     modelSelect.innerHTML = "";
 
     const autoOption = document.createElement("option");
@@ -207,6 +263,7 @@ fetch("/api/capabilities")
     updateLanguageAvailability();
     updateModelAvailability();
 
+    gpuActive = caps.hardware.gpu_usable;
     if (caps.hardware.gpu_usable) {
       hardwareInfo.textContent = `Detected: ${caps.hardware.gpu_name} (${(caps.hardware.vram_mb / 1024).toFixed(1)} GB VRAM) — GPU acceleration active.`;
     } else if (caps.hardware.gpu_present) {
@@ -263,6 +320,12 @@ function loadSourcePreview(blob) {
   sourceWavesurfer.on("play", () => setSourcePlayState(true));
   sourceWavesurfer.on("pause", () => setSourcePlayState(false));
   sourceWavesurfer.on("finish", () => setSourcePlayState(false));
+  // Feeds the transcription-time estimate — captured here (once decoding
+  // finishes) rather than trusted from the source, since recorded blobs
+  // don't carry a reliable duration any other way.
+  sourceWavesurfer.on("ready", () => {
+    if (selectedSource) selectedSource.durationSec = sourceWavesurfer.getDuration();
+  });
 }
 
 sourcePlayBtn.addEventListener("click", () => {
@@ -522,7 +585,7 @@ async function ensureModelReady(modelSize) {
     }
 
     const now = Date.now();
-    const elapsedSec = Math.floor((now - startTime) / 1000);
+    const elapsedSec = (now - startTime) / 1000;
     let speedText = "";
     if (data.downloaded_mb != null && lastMb != null) {
       const deltaMb = data.downloaded_mb - lastMb;
@@ -536,11 +599,11 @@ async function ensureModelReady(modelSize) {
 
     if (data.percent != null) {
       downloadProgressBar.value = data.percent;
-      downloadProgressDetail.textContent = `${data.percent}% — ${data.downloaded_mb} / ${data.total_mb} MB${speedText} — ${elapsedSec}s elapsed`;
+      downloadProgressDetail.textContent = `${data.percent}% — ${data.downloaded_mb} / ${data.total_mb} MB${speedText} — ${formatDuration(elapsedSec)} elapsed`;
     } else {
       downloadProgressBar.removeAttribute("value");
       const byteText = data.downloaded_mb != null ? `${data.downloaded_mb} MB downloaded so far` : "Preparing download";
-      downloadProgressDetail.textContent = `${byteText}${speedText} — ${elapsedSec}s elapsed`;
+      downloadProgressDetail.textContent = `${byteText}${speedText} — ${formatDuration(elapsedSec)} elapsed`;
     }
   }
 
@@ -581,13 +644,33 @@ transcribeBtn.addEventListener("click", async () => {
   // No real progress signal available from a single blocking /api/transcribe
   // call, so this is an honest elapsed-time indicator (proves it's alive)
   // rather than a fake percentage — same reasoning as the model-download
-  // progress bar's elapsed counter.
+  // progress bar's elapsed counter. The remaining-time figure alongside it
+  // is a genuine estimate (see estimateRtf above), not a guess dressed up
+  // as one — always labeled "estimated" since it's necessarily rough,
+  // especially before this engine/model has run on this machine before.
+  const transcribeEngine = engineSelect.value;
+  const transcribeModel = transcribeEngine === "faster-whisper"
+    ? (modelSelect.value === "auto" ? autoDefaultModel : modelSelect.value)
+    : null;
+  const durationSec = selectedSource.durationSec ?? null;
+  const { rtf: estimatedRtf, calibrated } = transcribeModel
+    ? estimateRtf(transcribeEngine, transcribeModel, gpuActive)
+    : { rtf: null, calibrated: false };
+  const estimatedTotalSec = durationSec != null && estimatedRtf != null ? durationSec * estimatedRtf : null;
+
   const transcribeStart = Date.now();
   const transcribeTimer = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - transcribeStart) / 1000);
-    setBusyStatus(statusEl, `Transcribing… ${elapsed}s elapsed`);
+    const elapsedSec = (Date.now() - transcribeStart) / 1000;
+    let text = `Transcribing… ${formatDuration(elapsedSec)} elapsed`;
+    if (estimatedTotalSec != null) {
+      const remainingSec = estimatedTotalSec - elapsedSec;
+      text += remainingSec > 0
+        ? ` (~${formatDuration(remainingSec)} remaining, estimated${calibrated ? "" : " — first run for this model"})`
+        : " (almost done — running longer than estimated)";
+    }
+    setBusyStatus(statusEl, text);
   }, 500);
-  setBusyStatus(statusEl, "Transcribing… 0s elapsed");
+  setBusyStatus(statusEl, "Transcribing… 0:00 elapsed");
 
   try {
     const res = await fetch("/api/transcribe", { method: "POST", body: formData });
@@ -620,6 +703,10 @@ transcribeBtn.addEventListener("click", async () => {
     resultSection.hidden = false;
     statusEl.textContent = "Done.";
     hasTranscription = true;
+    if (transcribeModel && durationSec) {
+      const actualElapsedSec = (Date.now() - transcribeStart) / 1000;
+      recordRtf(transcribeEngine, transcribeModel, actualElapsedSec / durationSec);
+    }
     // AI formatting needs editable text to work from — odt (binary)
     // output has none, so the section stays hidden in that case rather
     // than silently re-fetching a separate plain-text copy behind the
