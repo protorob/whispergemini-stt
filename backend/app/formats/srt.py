@@ -9,7 +9,10 @@ def _format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{ms:03d}"
 
 
-def to_srt(segments: list[Segment]) -> str:
+def to_srt(segments: list[Segment], gap_seconds: float = 0.0) -> str:
+    # gap_seconds is accepted for a uniform signature across formats but
+    # unused here — SRT cues are always one per segment, pause sensitivity
+    # only affects formats that group segments into paragraphs.
     lines = []
     for i, seg in enumerate(segments, start=1):
         lines.append(str(i))

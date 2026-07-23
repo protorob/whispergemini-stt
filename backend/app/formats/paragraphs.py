@@ -7,6 +7,13 @@ from app.engines.base import Segment
 # comfortably above it.
 PARAGRAPH_GAP_SECONDS = 1.0
 
+PAUSE_SENSITIVITY_SECONDS: dict[str, float] = {
+    "short": 0.5,
+    "normal": PARAGRAPH_GAP_SECONDS,
+    "long": 2.0,
+}
+DEFAULT_PAUSE_SENSITIVITY = "normal"
+
 
 def group_into_paragraphs(
     segments: list[Segment], gap_seconds: float = PARAGRAPH_GAP_SECONDS

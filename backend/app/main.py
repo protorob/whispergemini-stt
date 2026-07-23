@@ -20,7 +20,7 @@ from app.enhance import (
     stream_format_transcript,
 )
 from app.formats import FORMATS
-from app.formats.paragraphs import group_into_paragraphs
+from app.formats.paragraphs import PAUSE_SENSITIVITY_SECONDS, group_into_paragraphs
 from app.hardware import MODEL_SIZES
 from app.markdown_odt import MarkdownConversionError, markdown_to_odt
 from app.model_status import status_for, warm_up
@@ -141,6 +141,7 @@ async def transcribe(
     output_format: str = Form(default="txt"),
     model: str = Form(default="auto"),
     engine: str = Form(default="faster-whisper"),
+    pause_sensitivity: str = Form(default="normal"),
 ):
     if output_format not in FORMATS:
         raise HTTPException(
@@ -148,6 +149,14 @@ async def transcribe(
             detail=f"unsupported output_format '{output_format}', expected one of {sorted(FORMATS)}",
         )
     fmt = FORMATS[output_format]
+
+    if pause_sensitivity not in PAUSE_SENSITIVITY_SECONDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported pause_sensitivity '{pause_sensitivity}', "
+            f"expected one of {sorted(PAUSE_SENSITIVITY_SECONDS)}",
+        )
+    gap_seconds = PAUSE_SENSITIVITY_SECONDS[pause_sensitivity]
 
     if engine not in ENGINES:
         raise HTTPException(
@@ -197,14 +206,14 @@ async def transcribe(
     finally:
         wav_path.unlink(missing_ok=True)
 
-    content = fmt.render(segments)
+    content = fmt.render(segments, gap_seconds)
     if isinstance(content, str):
         content = content.encode("utf-8")
 
     # Start-of-paragraph times (seconds), skipping the very first paragraph
     # since a marker at t=0 isn't useful — lets the frontend drop a marker
     # on the waveform everywhere Whisper detected a long-enough pause.
-    paragraphs = group_into_paragraphs(segments)
+    paragraphs = group_into_paragraphs(segments, gap_seconds)
     pause_markers = [para[0].start for para in paragraphs[1:]]
 
     return Response(

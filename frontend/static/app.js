@@ -32,6 +32,8 @@ const engineSelect = document.getElementById("engine-select");
 const languageSelect = document.getElementById("language-select");
 const formatSelect = document.getElementById("format-select");
 const modelSelect = document.getElementById("model-select");
+const pauseSensitivitySelect = document.getElementById("pause-sensitivity-select");
+const pauseSensitivityHint = document.getElementById("pause-sensitivity-hint");
 const hardwareInfo = document.getElementById("hardware-info");
 const transcribeBtn = document.getElementById("transcribe-btn");
 const downloadProgress = document.getElementById("download-progress");
@@ -62,6 +64,20 @@ const customStyleLabel = document.getElementById("custom-style-label");
 const customStyleInput = document.getElementById("custom-style-input");
 const previewHint = document.getElementById("preview-hint");
 const resetPreviewBtn = document.getElementById("reset-preview-btn");
+
+// Mirrors PAUSE_SENSITIVITY_SECONDS in backend/app/formats/paragraphs.py —
+// keep the gap values mentioned here in sync with that dict.
+const PAUSE_SENSITIVITY_HINTS = {
+  short: "Breaks into a new paragraph after even a brief pause (~0.5s) — more, shorter paragraphs.",
+  normal: "Breaks into a new paragraph after a natural pause (~1s) — a good default for most speech.",
+  long: "Only breaks into a new paragraph after a long pause (~2s) — fewer, longer paragraphs.",
+};
+
+function updatePauseSensitivityHint() {
+  pauseSensitivityHint.textContent = PAUSE_SENSITIVITY_HINTS[pauseSensitivitySelect.value] || "";
+}
+pauseSensitivitySelect.addEventListener("change", updatePauseSensitivityHint);
+updatePauseSensitivityHint();
 
 function setBusyStatus(el, text) {
   el.innerHTML = "";
@@ -657,6 +673,7 @@ transcribeBtn.addEventListener("click", async () => {
   const isTextualFormat = formatSelect.value !== "odt";
   formData.append("output_format", formatSelect.value);
   formData.append("engine", engineSelect.value);
+  formData.append("pause_sensitivity", pauseSensitivitySelect.value);
   if (engineSelect.value === "faster-whisper") {
     formData.append("model", modelSelect.value);
   }
