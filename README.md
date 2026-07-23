@@ -60,7 +60,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Visit **http://localhost:8000**.
+Visit **http://localhost:8000**. Add `--port 8001` (or any other free port)
+if 8000 is already taken by something else.
 
 ### Option B — Local Python (Windows)
 
@@ -75,7 +76,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Visit **http://localhost:8000**.
+Visit **http://localhost:8000**. Add `--port 8001` (or any other free port)
+if 8000 is already taken by something else.
 
 > **Windows note:** the first time a model downloads, Windows may block
 > the cache from creating symlinks unless Developer Mode is turned on
