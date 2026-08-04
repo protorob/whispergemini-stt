@@ -4,12 +4,22 @@
   --muted: #666;
   --accent: #3a5ccc;
   --danger: #cc3a3a;
+  /* Brand wordmark colors only (see BRAND.md) — not the app's functional
+     --accent, scoped to the title/tagline lockup until the rest of the
+     UI's visual direction is decided. Light/dark values are deliberately
+     different shades (not the same hex reused) so each stays legible
+     against its own background — a dull gold flattens into white, a deep
+     sapphire disappears into near-black. */
+  --brand-gold: #8a661e;
+  --brand-sapphire: #1b3a6b;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --border: #444;
     --muted: #aaa;
+    --brand-gold: #e8c158;
+    --brand-sapphire: #6e9fe0;
   }
 }
 
@@ -36,13 +46,30 @@ body {
   line-height: 1.5;
 }
 
+/* Wordmark + tagline lockup: the one place a historical display serif
+   appears (see BRAND.md's typography section) — a system font stack, not
+   a webfont, since this app deliberately ships no external/CDN assets
+   (see PLAN.md) and everything else runs fully on-device. Never use this
+   family for body copy, transcript text, or form controls — readability
+   there matters more than theming. */
 h1 {
-  margin-bottom: 0.25rem;
+  font-family: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  color: var(--brand-gold);
+  margin-bottom: 0.15rem;
+  letter-spacing: 0.02em;
+}
+
+.tagline {
+  font-family: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  color: var(--brand-sapphire);
+  font-style: italic;
+  margin: 0;
+  font-size: 0.95rem;
 }
 
 .subtitle {
   color: var(--muted);
-  margin-top: 0;
+  margin-top: 0.35rem;
 }
 
 .source-card {

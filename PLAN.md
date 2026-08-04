@@ -1,4 +1,4 @@
-# am-whisper-stt — Plan
+# Cassiodorus — Plan
 
 Local-first speech-to-text webapp: upload a file or record from the mic,
 transcribe with an auto-selected (or manually chosen) Whisper-family engine,
@@ -153,7 +153,7 @@ current call in `engines/faster_whisper_engine.py`.
 ## Architecture
 
 ```
-am-whisper-stt/
+Cassiodorus/
   backend/
     app/
       main.py              # FastAPI app, routes

@@ -1,4 +1,6 @@
-# am-whisper-stt
+# Cassiodorus
+
+*Ancient diligence. Modern intelligence.*
 
 A self-hosted speech-to-text web app. Upload an audio file or record from
 your mic in the browser, transcribe it locally with

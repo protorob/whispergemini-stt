@@ -29,7 +29,7 @@ from app.model_status import status_for, warm_up
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
-app = FastAPI(title="am-whisper-stt")
+app = FastAPI(title="Cassiodorus")
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR / "static"), name="static")
 
