@@ -136,10 +136,19 @@ per-device — doesn't follow a user anywhere. None of this contradicts the
 browser-local cache; the server still deletes uploaded audio immediately
 after processing either way, unchanged by this feature.
 
-**Not yet verified**: this was implemented and syntax-checked
-(`node --check`) but not exercised in a real browser — worth a real pass
-covering: upload → transcribe → reload (confirms restore), edit the
-transcript → reload (confirms edits survive), Delete with a session
-present (confirms the warning fires and both storage layers actually
-clear), and a large (>50MB) file (confirms it degrades to "no audio
-restored" rather than erroring).
+**Verified (2026-08-04, real browser)**: audio, transcript, and edits all
+survive a reload as designed. One real bug found and fixed along the
+way — the Gemini-formatted result didn't survive a reload even though
+audio/transcript did. Root cause was reload timing (reloading before the
+enhance call had resolved and called `persistSession()` — the
+transcript's own persist happens earlier, at transcribe-success, so a
+reload mid-enhance looks like a partial/broken restore rather than what
+it actually is: nothing to restore yet). `persistSession()`'s `catch`
+block was also silently swallowing *any* error, not just the expected
+storage-full/unavailable ones — changed to `console.warn` so a genuine
+bug wouldn't be invisible next time. Confirmed working end-to-end once
+the user waited for the enhance status to actually say "Done." before
+reloading. **Still not exercised**: Delete-with-a-session-present (does
+the confirmation fire and both storage layers actually clear?), and a
+large (>50MB) source file (does it degrade to "no audio restored" rather
+than erroring?).

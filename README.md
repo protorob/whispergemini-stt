@@ -22,9 +22,18 @@ formatting.
   adjustable **Paragraph breaks** sensitivity (short/normal/long) — the
   same pauses are also marked directly on the audio waveform
 - Transcript preview is directly editable before you download it
+- Optional speaker diarization ("Multiple speakers") — labels each part
+  of the transcript by who's speaking, with colored overlay bands on the
+  waveform (requires `pyannote.audio` installed and `HF_TOKEN` set, see
+  [Configuration](#configuration))
 - Optional "Format with AI" pass (Gemini) that turns a raw transcript into
   clean Markdown, with an adjustable creativity level, without inventing
   facts that weren't in the original audio
+- Light/dark theme (follows your OS by default, or override with the
+  sun/moon toggle) and an in-app "About" popup covering how it works
+- Your current session (audio, transcript, edits, AI-formatted result)
+  survives a page reload — stored in your browser only, cleared by an
+  explicit Delete
 
 ## Requirements
 
@@ -95,9 +104,11 @@ if 8000 is already taken by something else.
 2. Pick an **engine** (faster-whisper, or Parakeet if a compatible GPU is
    detected), **language** (or leave on auto-detect), **output format**,
    **model** (or leave on "Auto" to use the recommended one for your
-   hardware), and **Paragraph breaks** sensitivity (how long a pause
-   should start a new paragraph — see the hint under the dropdown for
-   what each level does).
+   hardware), **Paragraph breaks** sensitivity (how long a pause should
+   start a new paragraph — see the hint under the dropdown for what each
+   level does), and **Speakers** (Single, or Multiple if diarization is
+   available on this server — labels each part of the transcript by
+   who's speaking).
 3. Click **Transcribe**.
    - If the selected model hasn't been downloaded yet, you'll see a real
      progress bar first — this only happens once per model, per machine.
@@ -127,6 +138,15 @@ is not wired into `docker-compose.yml`).
 
 Check `GET /api/capabilities` at any time to see what hardware was
 detected and which settings are currently active.
+
+**Speaker diarization** ("Multiple speakers" in the UI) is a separate
+optional install — `pip install -r backend/requirements-diarization.txt`
+(pulls in PyTorch) — and needs the same `HF_TOKEN` above, whose account
+must have separately accepted the `pyannote/speaker-diarization-3.1`
+license on huggingface.co. Both conditions are checked once at startup
+and exposed via `GET /api/capabilities`; if either is missing, the
+"Multiple speakers" option is disabled in the UI with an explanation
+rather than failing at request time.
 
 ## Model downloads
 
@@ -188,3 +208,8 @@ frontend/                      Static HTML/CSS/JS frontend
   built, tested, and debugged (useful if you're extending this project
   and want the "why" behind a decision, or the exact fix for a hardware
   quirk hit along the way).
+- **`BRAND.md`** — naming, color palette, typography, and voice/tone
+  guidelines for the Cassiodorus rebrand.
+- **`DEPLOYMENT.md`** — notes from a planning discussion on hosting and
+  monetization directions (browser-side compute, a paid cloud tier) —
+  not yet built, captured for when that work actually starts.
