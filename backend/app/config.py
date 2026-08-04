@@ -18,6 +18,7 @@ class Settings:
     parakeet_model: str
     parakeet_languages: list[str]
     gemini_model: str
+    hf_token: str | None
 
 
 def _load_settings() -> Settings:
@@ -34,6 +35,7 @@ def _load_settings() -> Settings:
             c.strip() for c in os.environ.get("PARAKEET_LANGUAGES", "en").split(",") if c.strip()
         ],
         gemini_model=os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"),
+        hf_token=os.environ.get("HF_TOKEN"),
     )
 
 

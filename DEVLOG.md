@@ -25,6 +25,7 @@ rationale behind the decisions below.
 - [x] **Editable transcript + unified button system** (2026-07-14): the primary transcript preview (`#preview`) is now directly editable in place — remove filler words, fix mistakes — instead of a separate duplicate textarea in the enhance section. Sending to Gemini reads this element's current value directly; no more silently re-transcribing fresh audio behind the scenes just to get an editable copy (was a real backend call every "Generate formatted version" click; now zero extra calls). A "reset to original" link restores the untouched transcript. Only available for textual output formats (txt/md/srt) — picking `odt` makes the preview read-only and keeps the AI-formatting section hidden, since there's no plain text to work from and this design deliberately doesn't fetch one behind your back anymore. Every action button (Transcribe, Download transcript, Generate formatted version, both formatted downloads, mic record) shares one `.btn`/`.btn-primary`/`.btn-secondary` system so the accent color consistently means "this is clickable." Caught and fixed a real regression while first building the (now-removed) separate-textarea version: the elapsed-time ticker for transcription wasn't stopped until the *entire* click handler finished, so it kept overwriting "Done." with stale "Transcribing… Ns elapsed" text during a background fetch — found via a full-page screenshot, not just assertions; worth remembering that screenshots catch things checks don't.
 - [x] **Removed the duplicate transcript view** (2026-07-14, follow-up): the separate-textarea design above was itself flagged as confusing — two copies of essentially the same transcript on screen. Collapsed back down to one editable preview (see above bullet, updated in place) that both the download link and the Gemini step read from directly.
 - [x] **Paragraph breaks from detected pauses + waveform pause markers** (2026-07-23): faster-whisper's own segments already carry `start`/`end` timestamps from its internal VAD/pause detection, but `to_txt()` used to throw that away and join every segment with a single space — one giant line, no matter how long the recording. `backend/app/formats/paragraphs.py` now groups segments into paragraphs wherever the gap between one segment's end and the next one's start crosses a threshold; `txt`/`md`/`odt` render per-paragraph instead of per-segment (SRT is untouched — subtitle cues stay one-per-segment regardless of pauses). A new **Paragraph breaks** dropdown (Short/Normal/Long pauses → ~0.5s/1s/2s gap, `PAUSE_SENSITIVITY_SECONDS`) lets you tune this per transcription, with a hint line under it explaining what each level does; sent as the new `pause_sensitivity` form field on `/api/transcribe`. The same gap threshold now also drives an `X-Pause-Markers` response header (JSON array of paragraph-start timestamps), which the frontend uses to drop a thin marker line on the source waveform at every detected pause — via wavesurfer's Regions plugin (`regions.esm.js`, vendored into `frontend/static/vendor/wavesurfer/` alongside the existing `wavesurfer.esm.js`/`record.esm.js`, matched to the same pinned version) registered on `sourceWavesurfer` as zero-width regions. Verified: paragraph-grouping logic exercised directly at all three sensitivity levels (confirms short produces more/shorter paragraphs than long, as expected) plus Python/JS syntax checks. Not yet exercised through a real browser transcription — worth a live run to confirm marker positions line up with actual pauses in a real recording, and to sanity-check whether the default 1.0s "normal" threshold feels right against real speech.
+- [x] **Speaker diarization + waveform speaker overlays** (2026-08-04, Phase 9): a **Speakers** dropdown (Single/Multiple, default Single so nothing changes unless opted in) sends a new `speakers` form field to `/api/transcribe`. When set to `multiple`, `backend/app/diarization.py` runs `pyannote.audio`'s `pyannote/speaker-diarization-3.1` pipeline (lazily imported and `@lru_cache`d like the Parakeet engine) on the normalized WAV, then `diarize_and_label()` merges the resulting speaker turns onto the existing faster-whisper/Parakeet segments by timestamp overlap (largest-overlap wins on ties) and remaps pyannote's raw `SPEAKER_00`/`SPEAKER_01` labels to first-appearance-ordered `Speaker 1`/`Speaker 2`/... for readability. `engines/base.py`'s `Segment` gained a `speaker: str | None = None` field (defaults to `None` everywhere it isn't set, so the whole single-speaker path is unchanged). `formats/paragraphs.py`'s `group_into_paragraphs()` now also starts a new paragraph on a speaker change (not just a long pause), and `txt`/`md`/`odt`/`srt` all prefix the speaker label when present (`Speaker 1: ...` in txt/odt, `**Speaker 1:**` in md, `[Speaker 1]` above each srt cue). A new `X-Speaker-Segments` response header (JSON array of `{start, end, speaker}`) drives colored, semi-transparent overlay bands per speaker on the source waveform — reusing the same wavesurfer Regions plugin as the pause markers (`renderTranscriptOverlays()` now draws both in one pass: speaker bands first, then pause-marker lines on top), with a fixed color cycled per speaker in first-seen order and click-to-play wired on each region (`region-clicked` → `region.play()`) so you can audition a diarized turn by ear. `GET /api/capabilities` gained `diarization.available` (true only when `pyannote.audio` is importable **and** `HF_TOKEN` is set — checked once at startup, same pattern as `PARAKEET_AVAILABLE`); the frontend disables the "Multiple speakers" option and explains why when it's false. Requires accepting the `pyannote/speaker-diarization-3.1` (and its dependency `pyannote/segmentation-3.0`) model license on huggingface.co under the `HF_TOKEN` account — see `.env.example`. Kept as a separate optional dependency, `requirements-diarization.txt` (`pyannote.audio`, which pulls in PyTorch), rather than folding into `requirements.txt`, matching how Parakeet's GPU deps are kept optional. **Verified**: `group_into_paragraphs()` directly with mixed speaker+pause data (confirms it now splits on speaker change even when the gap is short, and that the no-speaker/single-speaker path renders byte-identical to before this change); all four format renderers against the same fixture (correct speaker prefixes in txt/md/odt, correct `[Speaker N]` line per srt cue); `diarize_and_label()`'s label-remapping and overlap-assignment helpers directly, including the straddling-segment tie-break and the no-overlap-at-all case; `diarization_importable()` returns `False` cleanly with pyannote not installed (this sandbox doesn't have it — same situation as NeMo/Parakeet); Python/JS syntax checks on every changed file. **Not verified**: an actual `pyannote.audio` install (heavy, pulls in PyTorch — not attempted here, same reasoning as skipping `nemo_toolkit` for Parakeet), a real diarization run against real multi-speaker audio, whether the merge/labeling holds up against pyannote's real output shape, or the waveform overlay rendering/click-to-play in an actual browser. Needs a real HF token with the model license accepted, `pip install -r requirements-diarization.txt`, and a real multi-speaker recording before trusting this in practice — the natural next step.
 
 The frontend now covers engine (faster-whisper, plus parakeet when
 available), language (auto/it/en/es, filtered by engine), output format
@@ -143,6 +144,14 @@ see what was detected and what's currently active.
 optional Parakeet engine — only usable when a GPU passes the startup
 inference smoke test *and* `nemo_toolkit` is installed (see
 `requirements-gpu.txt` / `Dockerfile.gpu`).
+
+Speaker diarization (the "Multiple speakers" option) has no dedicated env
+var — it's available whenever `pyannote.audio` is installed (see
+`requirements-diarization.txt`) *and* `HF_TOKEN` is set, checked once at
+startup and exposed via `GET /api/capabilities`'s `diarization.available`.
+`HF_TOKEN`'s account also needs to have accepted the license for
+`pyannote/speaker-diarization-3.1` (and `pyannote/segmentation-3.0`) on
+huggingface.co — a valid token alone isn't enough if that step is skipped.
 
 ### Model downloads
 
@@ -392,7 +401,10 @@ curl -X POST http://localhost:8000/api/transcribe \
 `language` is optional — omit it (or pass an empty value) for auto-detect.
 `output_format` is one of `txt` (default), `md`, `srt`, `odt`.
 `pause_sensitivity` is optional (`short`/`normal`/`long`, default `normal`)
-— see "Paragraph breaks from detected pauses" below.
+— see "Paragraph breaks from detected pauses" below. `speakers` is optional
+(`single`/`multiple`, default `single`) — see "Speaker diarization" above;
+`multiple` requires `requirements-diarization.txt` installed and `HF_TOKEN`
+set, or the request returns a clean 400.
 
 ## Local dev (without Docker) — Windows
 
@@ -435,7 +447,14 @@ was never actually run, only reasoned about. Worth doing a real
 
 ## Picking this back up
 
-Next: **Phase 7 — Coolify readiness** (healthcheck wiring, env-based
+Immediate next step: **live-verify speaker diarization** (2026-08-04's
+feature, see its status entry above) — install `requirements-diarization.txt`,
+get a real `HF_TOKEN` with the `pyannote/speaker-diarization-3.1` license
+accepted, and run a real multi-speaker recording through the "Multiple
+speakers" option to confirm the merge/labels/waveform overlays hold up
+against real pyannote output, not just the fixture-based unit checks.
+
+After that: **Phase 7 — Coolify readiness** (healthcheck wiring, env-based
 overrides, model-cache volume, deployment docs). See `PLAN.md` for the
 full phase breakdown and architecture rationale, the "GPU inference
 finding" note above before touching `hardware.py`, and the Parakeet

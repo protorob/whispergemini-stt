@@ -23,7 +23,11 @@ def group_into_paragraphs(
 
     paragraphs: list[list[Segment]] = [[segments[0]]]
     for prev, seg in zip(segments, segments[1:]):
-        if seg.start - prev.end >= gap_seconds:
+        # A paragraph shouldn't span a speaker change even if the gap
+        # between the two segments is short (people often talk over the
+        # tail end of each other, or reply almost immediately).
+        speaker_changed = seg.speaker is not None and seg.speaker != prev.speaker
+        if seg.start - prev.end >= gap_seconds or speaker_changed:
             paragraphs.append([seg])
         else:
             paragraphs[-1].append(seg)

@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.audio import AudioNormalizationError, normalize_to_wav
 from app.config import settings
+from app.diarization import DiarizationError, diarization_importable, diarize_and_label
 from app.engines.base import Segment
 from app.engines.faster_whisper_engine import FasterWhisperEngine
 from app.enhance import (
@@ -45,6 +46,13 @@ def _parakeet_importable() -> bool:
 
 
 PARAKEET_AVAILABLE = settings.hardware.gpu_usable and _parakeet_importable()
+
+# Diarization needs pyannote.audio installed (requirements-diarization.txt)
+# and an HF_TOKEN with the pyannote/speaker-diarization-3.1 model's license
+# accepted on huggingface.co — both are checked once at startup rather than
+# per-request.
+DIARIZATION_AVAILABLE = diarization_importable() and bool(settings.hf_token)
+SPEAKER_MODES = ["single", "multiple"]
 
 
 @lru_cache(maxsize=2)
@@ -131,6 +139,9 @@ def capabilities():
                 "model": settings.parakeet_model,
             },
         },
+        "diarization": {
+            "available": DIARIZATION_AVAILABLE,
+        },
     }
 
 
@@ -142,6 +153,7 @@ async def transcribe(
     model: str = Form(default="auto"),
     engine: str = Form(default="faster-whisper"),
     pause_sensitivity: str = Form(default="normal"),
+    speakers: str = Form(default="single"),
 ):
     if output_format not in FORMATS:
         raise HTTPException(
@@ -157,6 +169,18 @@ async def transcribe(
             f"expected one of {sorted(PAUSE_SENSITIVITY_SECONDS)}",
         )
     gap_seconds = PAUSE_SENSITIVITY_SECONDS[pause_sensitivity]
+
+    if speakers not in SPEAKER_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported speakers '{speakers}', expected one of {SPEAKER_MODES}",
+        )
+    if speakers == "multiple" and not DIARIZATION_AVAILABLE:
+        raise HTTPException(
+            status_code=400,
+            detail="speaker diarization is not available on this server "
+            "(requires pyannote.audio installed and HF_TOKEN set)",
+        )
 
     if engine not in ENGINES:
         raise HTTPException(
@@ -197,12 +221,18 @@ async def transcribe(
         transcriber = get_parakeet_engine() if engine == "parakeet" else get_faster_whisper_engine(model_size)
         return transcriber.transcribe(wav_path, language=language or None)
 
+    speaker_turns = []
     try:
         # ffmpeg normalization and the model's transcribe() call are both
         # blocking, CPU/GPU-bound work — running them inline in this async
         # endpoint would freeze the whole event loop (and every other
         # request, including /api/models/status polling) until they finish.
         segments = await run_in_threadpool(_run_transcription)
+        if speakers == "multiple":
+            try:
+                segments, speaker_turns = await run_in_threadpool(diarize_and_label, wav_path, segments)
+            except DiarizationError as exc:
+                raise HTTPException(status_code=500, detail=f"speaker diarization failed: {exc}") from exc
     finally:
         wav_path.unlink(missing_ok=True)
 
@@ -222,6 +252,9 @@ async def transcribe(
         headers={
             "Content-Disposition": f'attachment; filename="transcript.{fmt.extension}"',
             "X-Pause-Markers": json.dumps(pause_markers),
+            "X-Speaker-Segments": json.dumps(
+                [{"start": t.start, "end": t.end, "speaker": t.speaker} for t in speaker_turns]
+            ),
         },
     )
 

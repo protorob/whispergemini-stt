@@ -34,6 +34,8 @@ const formatSelect = document.getElementById("format-select");
 const modelSelect = document.getElementById("model-select");
 const pauseSensitivitySelect = document.getElementById("pause-sensitivity-select");
 const pauseSensitivityHint = document.getElementById("pause-sensitivity-hint");
+const speakersSelect = document.getElementById("speakers-select");
+const speakersHint = document.getElementById("speakers-hint");
 const hardwareInfo = document.getElementById("hardware-info");
 const transcribeBtn = document.getElementById("transcribe-btn");
 const downloadProgress = document.getElementById("download-progress");
@@ -78,6 +80,23 @@ function updatePauseSensitivityHint() {
 }
 pauseSensitivitySelect.addEventListener("change", updatePauseSensitivityHint);
 updatePauseSensitivityHint();
+
+// Diarization is imperfect on overlapping speech/short interjections, so the
+// hint sets expectations rather than promising exact results — the
+// transcript preview stays editable for exactly this reason.
+function updateSpeakersHint() {
+  if (speakersSelect.value !== "multiple") {
+    speakersHint.textContent = "";
+  } else if (!diarizationAvailable) {
+    speakersHint.textContent =
+      "Speaker diarization isn't available on this server (needs pyannote.audio installed and HF_TOKEN set).";
+  } else {
+    speakersHint.textContent =
+      "Detects who's speaking and labels each paragraph — imperfect on overlapping speech, edit the transcript to fix misattributed lines.";
+  }
+}
+speakersSelect.addEventListener("change", updateSpeakersHint);
+updateSpeakersHint();
 
 function setBusyStatus(el, text) {
   el.innerHTML = "";
@@ -155,6 +174,7 @@ let sourceRegions = null; // its RegionsPlugin, used to drop pause markers once 
 let selectedSource = null; // { blob, filename }
 let engineLanguageSupport = {}; // engine name -> list of supported codes, or null for unrestricted
 let gpuActive = false; // caps.hardware.gpu_usable, used to seed transcription time estimates
+let diarizationAvailable = false; // caps.diarization.available
 let autoDefaultModel = null; // the concrete model size "auto" currently resolves to, per /api/capabilities
 
 // The source card is a single element showing one of these four states at a
@@ -281,6 +301,11 @@ fetch("/api/capabilities")
     updateLanguageAvailability();
     updateModelAvailability();
 
+    diarizationAvailable = Boolean(caps.diarization?.available);
+    const multipleSpeakersOption = [...speakersSelect.options].find((o) => o.value === "multiple");
+    if (multipleSpeakersOption) multipleSpeakersOption.disabled = !diarizationAvailable;
+    updateSpeakersHint();
+
     gpuActive = caps.hardware.gpu_usable;
     if (caps.hardware.gpu_usable) {
       hardwareInfo.textContent = `Detected: ${caps.hardware.gpu_name} (${(caps.hardware.vram_mb / 1024).toFixed(1)} GB VRAM) — GPU acceleration active.`;
@@ -324,11 +349,46 @@ function teardownSourceWavesurfer() {
   sourceRegions = null;
 }
 
-// Drops a thin marker line at each pause Whisper detected (paragraph
-// breaks), matching what the transcript preview now shows as blank lines.
-function renderPauseMarkers(pauseMarkers) {
+// Cycled through in first-seen order (matches diarize_and_label's "Speaker
+// 1, Speaker 2, ..." numbering on the backend) so each speaker gets a
+// consistent, distinct color across the waveform overlay.
+const SPEAKER_OVERLAY_COLORS = [
+  "rgba(58, 92, 204, 0.25)", // accent blue
+  "rgba(16, 163, 74, 0.25)", // green
+  "rgba(217, 119, 6, 0.25)", // amber
+  "rgba(219, 39, 119, 0.25)", // pink
+  "rgba(124, 58, 237, 0.25)", // violet
+  "rgba(8, 145, 178, 0.25)", // cyan
+];
+
+function colorForSpeaker(speaker, speakerColorMap) {
+  if (!(speaker in speakerColorMap)) {
+    const index = Object.keys(speakerColorMap).length % SPEAKER_OVERLAY_COLORS.length;
+    speakerColorMap[speaker] = SPEAKER_OVERLAY_COLORS[index];
+  }
+  return speakerColorMap[speaker];
+}
+
+// Draws both the per-speaker overlay bands (wide, translucent, one per
+// diarized turn — click one to play just that stretch) and the pause-based
+// paragraph markers (thin lines) on top, matching what the transcript
+// preview shows as speaker labels / blank lines respectively.
+function renderTranscriptOverlays(pauseMarkers, speakerTurns) {
   if (!sourceRegions) return;
   sourceRegions.clearRegions();
+
+  const speakerColorMap = {};
+  for (const turn of speakerTurns) {
+    sourceRegions.addRegion({
+      start: turn.start,
+      end: turn.end,
+      color: colorForSpeaker(turn.speaker, speakerColorMap),
+      content: turn.speaker,
+      drag: false,
+      resize: false,
+    });
+  }
+
   for (const t of pauseMarkers) {
     sourceRegions.addRegion({
       start: t,
@@ -350,6 +410,12 @@ function loadSourcePreview(blob) {
     barWidth: 2,
     cursorWidth: 0,
     plugins: [sourceRegions],
+  });
+  // Click a speaker/pause region to jump to and play that stretch of
+  // audio — a natural way to check a diarization call by ear.
+  sourceRegions.on("region-clicked", (region, event) => {
+    event.stopPropagation();
+    region.play();
   });
   sourceWavesurfer.loadBlob(blob);
   setSourcePlayState(false);
@@ -674,6 +740,7 @@ transcribeBtn.addEventListener("click", async () => {
   formData.append("output_format", formatSelect.value);
   formData.append("engine", engineSelect.value);
   formData.append("pause_sensitivity", pauseSensitivitySelect.value);
+  formData.append("speakers", speakersSelect.value);
   if (engineSelect.value === "faster-whisper") {
     formData.append("model", modelSelect.value);
   }
@@ -721,12 +788,13 @@ transcribeBtn.addEventListener("click", async () => {
     const filename = parseFilename(res.headers.get("Content-Disposition"));
 
     const pauseMarkersHeader = res.headers.get("X-Pause-Markers");
-    if (pauseMarkersHeader) {
-      try {
-        renderPauseMarkers(JSON.parse(pauseMarkersHeader));
-      } catch {
-        // non-fatal — the transcript itself still came through fine
-      }
+    const speakerSegmentsHeader = res.headers.get("X-Speaker-Segments");
+    try {
+      const pauseMarkers = pauseMarkersHeader ? JSON.parse(pauseMarkersHeader) : [];
+      const speakerTurns = speakerSegmentsHeader ? JSON.parse(speakerSegmentsHeader) : [];
+      renderTranscriptOverlays(pauseMarkers, speakerTurns);
+    } catch {
+      // non-fatal — the transcript itself still came through fine
     }
 
     const url = URL.createObjectURL(blob);

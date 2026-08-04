@@ -1,0 +1,10 @@
+# Optional, on top of requirements.txt — only needed to enable speaker
+# diarization (the "Multiple speakers" switch). Pulls in PyTorch +
+# torchaudio: the CPU wheel works fine, GPU is meaningfully faster but not
+# required. If requirements-gpu.txt is also installed, pyannote reuses that
+# same torch install rather than needing a second one.
+#
+# Also requires an HF_TOKEN (see .env.example) with the
+# pyannote/speaker-diarization-3.1 model's license accepted on
+# huggingface.co — the pip install alone isn't enough.
+pyannote.audio

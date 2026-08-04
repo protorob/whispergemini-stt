@@ -17,6 +17,6 @@ def to_srt(segments: list[Segment], gap_seconds: float = 0.0) -> str:
     for i, seg in enumerate(segments, start=1):
         lines.append(str(i))
         lines.append(f"{_format_timestamp(seg.start)} --> {_format_timestamp(seg.end)}")
-        lines.append(seg.text)
+        lines.append(f"[{seg.speaker}] {seg.text}" if seg.speaker else seg.text)
         lines.append("")
     return "\n".join(lines).strip() + "\n"

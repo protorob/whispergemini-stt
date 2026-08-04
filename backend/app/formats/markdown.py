@@ -14,6 +14,7 @@ def to_markdown(segments: list[Segment], gap_seconds: float = PARAGRAPH_GAP_SECO
     lines = []
     for para in group_into_paragraphs(segments, gap_seconds):
         text = " ".join(s.text for s in para)
-        lines.append(f"**[{_format_timestamp(para[0].start)}]** {text}")
+        speaker_label = f" **{para[0].speaker}:**" if para[0].speaker else ""
+        lines.append(f"**[{_format_timestamp(para[0].start)}]**{speaker_label} {text}")
         lines.append("")
     return "\n".join(lines).strip() + "\n"
