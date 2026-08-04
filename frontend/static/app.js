@@ -137,6 +137,235 @@ aboutDialog.addEventListener("click", (event) => {
   if (event.target === aboutDialog) aboutDialog.close();
 });
 
+// --- Session persistence -------------------------------------------
+//
+// Survives a page reload; only cleared by an explicit "Delete"/close on
+// the source card (see clearSource further down), never just by closing
+// the tab. Two storage layers: IndexedDB for the audio blob (localStorage
+// is string-only and capped around 5-10MB — nowhere near enough for
+// audio), localStorage for everything else (transcript text, markers,
+// options — all small).
+//
+// Deliberately persists the ORIGINAL selected blob, not a
+// server-normalized re-encode — fetching a normalized copy before the
+// user even clicks Transcribe would mean an extra ffmpeg round trip on
+// every source pick just to prepare a "maybe never used" cached copy.
+// Instead it's just size-capped: skip persisting audio above
+// MAX_PERSISTED_AUDIO_BYTES (session text/options still persist), so one
+// large video upload can't silently fill up IndexedDB.
+//
+// Also deliberately does NOT restore the engine/model dropdowns — those
+// <select> options are populated asynchronously from /api/capabilities,
+// and correctly sequencing a restore against that fetch (which sets its
+// own defaults once it resolves) isn't worth the complexity for what's a
+// convenience feature. Format/language/pause-sensitivity/speakers are
+// plain static <select> options in the HTML, so restoring those is safe.
+const SESSION_DB_NAME = "cassiodorus-session";
+const SESSION_DB_VERSION = 1;
+const SESSION_STORE = "audio";
+const SESSION_AUDIO_KEY = "current";
+const SESSION_STORAGE_KEY = "cassiodorusSessionV1";
+const MAX_PERSISTED_AUDIO_BYTES = 50 * 1024 * 1024;
+const TEXT_FORMAT_MEDIA_TYPES = { txt: "text/plain", md: "text/markdown", srt: "application/x-subrip" };
+
+// Set once a transcript actually comes back (live or restored) — kept
+// outside the transcribe handler's own scope so persistSession() can read
+// them from anywhere.
+let lastIsTextualFormat = true;
+let lastDownloadFilename = null;
+let lastPauseMarkers = [];
+let lastSpeakerTurns = [];
+
+function openSessionDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(SESSION_DB_NAME, SESSION_DB_VERSION);
+    req.onupgradeneeded = () => req.result.createObjectStore(SESSION_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveSessionAudio(blob, filename, kind) {
+  try {
+    const db = await openSessionDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(SESSION_STORE, "readwrite");
+      tx.objectStore(SESSION_STORE).put({ blob, filename, kind }, SESSION_AUDIO_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // IndexedDB unavailable/blocked (private browsing, quota) — the text
+    // side of the session still persists via localStorage, just without
+    // restorable audio.
+  }
+}
+
+async function loadSessionAudio() {
+  try {
+    const db = await openSessionDb();
+    const record = await new Promise((resolve, reject) => {
+      const tx = db.transaction(SESSION_STORE, "readonly");
+      const req = tx.objectStore(SESSION_STORE).get(SESSION_AUDIO_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+async function clearSessionAudio() {
+  try {
+    const db = await openSessionDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(SESSION_STORE, "readwrite");
+      tx.objectStore(SESSION_STORE).delete(SESSION_AUDIO_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // best-effort — nothing more to do if IndexedDB itself is unavailable.
+  }
+}
+
+function loadSessionState() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function clearSessionState() {
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+// Rebuilds the full session snapshot from current live state and writes
+// it out. Called after anything worth surviving a reload changes — a new
+// source picked, a transcript comes back, an edit is made, an
+// AI-formatted version is generated.
+function persistSession() {
+  if (!selectedSource) return;
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+      filename: selectedSource.filename,
+      kind: selectedSource.kind,
+      durationSec: selectedSource.durationSec ?? null,
+      audioSkipped: Boolean(selectedSource.audioSkipped),
+      options: {
+        language: languageSelect.value,
+        format: formatSelect.value,
+        pauseSensitivity: pauseSensitivitySelect.value,
+        speakers: speakersSelect.value,
+      },
+      hasTranscription,
+      isTextualFormat: lastIsTextualFormat,
+      downloadFilename: lastDownloadFilename,
+      originalTranscriptText,
+      currentTranscriptText: hasTranscription ? previewEl.value : null,
+      pauseMarkers: lastPauseMarkers,
+      speakerTurns: lastSpeakerTurns,
+      enhancedMarkdown: lastEnhancedMarkdown,
+    }));
+  } catch {
+    // localStorage unavailable/full — session just won't survive a reload.
+  }
+}
+
+// Called once, right after a brand-new source is picked (upload or
+// recording) — separate from persistSession() because this is the one
+// point an (async, possibly skipped) IndexedDB write is actually needed.
+async function persistNewSource(blob, filename) {
+  if (blob.size > MAX_PERSISTED_AUDIO_BYTES) {
+    selectedSource.audioSkipped = true;
+    await clearSessionAudio(); // drop any stale previous audio so a later restore can't show the wrong file
+  } else {
+    selectedSource.audioSkipped = false;
+    await saveSessionAudio(blob, filename, selectedSource.kind);
+  }
+  persistSession();
+}
+
+async function restoreSession() {
+  const session = loadSessionState();
+  if (!session) return;
+
+  if (session.options) {
+    if (session.options.language !== undefined) languageSelect.value = session.options.language;
+    if (session.options.format) formatSelect.value = session.options.format;
+    if (session.options.pauseSensitivity) pauseSensitivitySelect.value = session.options.pauseSensitivity;
+    if (session.options.speakers) speakersSelect.value = session.options.speakers;
+    updatePauseSensitivityHint();
+    updateSpeakersHint();
+  }
+
+  const audioRecord = session.audioSkipped ? null : await loadSessionAudio();
+  if (!audioRecord) {
+    // Nothing to actually show without the blob (no waveform/playback
+    // possible) — rather than a half-restored UI with text but no source
+    // card, just drop the stale session. Large (audioSkipped) files are
+    // the main case this hits.
+    clearSessionState();
+    return;
+  }
+
+  setSource(audioRecord.kind || "file", audioRecord.blob, audioRecord.filename || session.filename || "audio");
+  selectedSource.durationSec = session.durationSec ?? null;
+  selectedSource.audioSkipped = false;
+
+  // ODT results were never kept client-side as bytes (only downloaded
+  // once, server-generated) — nothing meaningful to restore for that case
+  // beyond the source audio above.
+  if (session.hasTranscription && session.isTextualFormat) {
+    hasTranscription = true;
+    lastIsTextualFormat = true;
+    lastDownloadFilename = session.downloadFilename || "transcript.txt";
+    lastPauseMarkers = session.pauseMarkers || [];
+    lastSpeakerTurns = session.speakerTurns || [];
+    originalTranscriptText = session.originalTranscriptText ?? null;
+    previewEl.value = session.currentTranscriptText ?? originalTranscriptText ?? "";
+    previewEl.readOnly = false;
+    previewHint.hidden = false;
+    resultSection.hidden = false;
+    statusEl.textContent = "Restored from your last session.";
+    enhanceSection.hidden = false;
+
+    if (session.currentTranscriptText != null) {
+      const mediaType = TEXT_FORMAT_MEDIA_TYPES[session.options?.format] || "text/plain";
+      const blob = new Blob([session.currentTranscriptText], { type: mediaType });
+      downloadLink.href = URL.createObjectURL(blob);
+      downloadLink.download = lastDownloadFilename;
+      downloadLinkLabel.textContent = `Download ${lastDownloadFilename}`;
+    }
+
+    if (session.enhancedMarkdown) {
+      lastEnhancedMarkdown = session.enhancedMarkdown;
+      enhancePreview.textContent = lastEnhancedMarkdown;
+      enhanceResult.hidden = false;
+      enhanceDownloads.hidden = false;
+      const mdBlob = new Blob([lastEnhancedMarkdown], { type: "text/markdown" });
+      enhanceDownloadMd.href = URL.createObjectURL(mdBlob);
+      enhanceDownloadMd.download = "transcript-formatted.md";
+    }
+
+    // Waveform overlays need the waveform actually decoded first —
+    // setSource() above kicked off an async loadBlob() that this races
+    // ahead of otherwise.
+    sourceWavesurfer.once("ready", () => {
+      renderTranscriptOverlays(lastPauseMarkers, lastSpeakerTurns);
+    });
+  }
+}
+
 // Mirrors PAUSE_SENSITIVITY_SECONDS in backend/app/formats/paragraphs.py —
 // keep the gap values mentioned here in sync with that dict.
 const PAUSE_SENSITIVITY_HINTS = {
@@ -284,6 +513,16 @@ let originalTranscriptText = null; // pristine transcribed text, for the "reset 
 
 resetPreviewBtn.addEventListener("click", () => {
   if (originalTranscriptText != null) previewEl.value = originalTranscriptText;
+  persistSession();
+});
+
+// Debounced so persistSession() (a synchronous JSON.stringify + localStorage
+// write) doesn't run on every keystroke while editing the transcript.
+let previewSaveTimer = null;
+previewEl.addEventListener("input", () => {
+  if (!hasTranscription) return;
+  clearTimeout(previewSaveTimer);
+  previewSaveTimer = setTimeout(persistSession, 600);
 });
 
 const savedGeminiKey = localStorage.getItem("gemini_api_key");
@@ -525,7 +764,7 @@ sourcePlayBtn.addEventListener("click", () => {
 });
 
 function setSource(kind, blob, filename) {
-  selectedSource = { blob, filename };
+  selectedSource = { blob, filename, kind };
   sourceSummaryText.textContent =
     kind === "file" ? `Selected file: ${filename}` : `Recorded audio ready: ${filename}`;
   // Unhide the review panel before creating the wavesurfer instance — its
@@ -535,10 +774,31 @@ function setSource(kind, blob, filename) {
 }
 
 function clearSource() {
+  // Only the delete/close actions on the review card (where a session may
+  // already be persisted) route through here — warn before destroying it,
+  // since there's no undo once IndexedDB/localStorage are cleared.
+  if (loadSessionState()) {
+    const confirmed = window.confirm(
+      "This will permanently delete your saved session (audio, transcript, and any edits). Continue?"
+    );
+    if (!confirmed) return;
+  }
+  clearSessionState();
+  clearSessionAudio();
+
   selectedSource = null;
   fileInput.value = "";
   teardownSourceWavesurfer();
   setCardState("idle");
+
+  hasTranscription = false;
+  originalTranscriptText = null;
+  lastEnhancedMarkdown = null;
+  lastPauseMarkers = [];
+  lastSpeakerTurns = [];
+  resultSection.hidden = true;
+  enhanceSection.hidden = true;
+  statusEl.textContent = "";
 }
 
 deleteSourceBtn.addEventListener("click", clearSource);
@@ -603,6 +863,7 @@ async function handleFileSelected(file) {
     return;
   }
   setSource("file", file, file.name);
+  persistNewSource(file, file.name);
 }
 
 function resetPauseButton() {
@@ -678,6 +939,7 @@ recordBtn.addEventListener("click", async () => {
       } else {
         const filename = `recording.${extensionFromMimeType(blob.type)}`;
         setSource("recording", blob, filename);
+        persistNewSource(blob, filename);
       }
     });
 
@@ -879,13 +1141,15 @@ transcribeBtn.addEventListener("click", async () => {
 
     const pauseMarkersHeader = res.headers.get("X-Pause-Markers");
     const speakerSegmentsHeader = res.headers.get("X-Speaker-Segments");
+    let pauseMarkers = [];
+    let speakerTurns = [];
     try {
-      const pauseMarkers = pauseMarkersHeader ? JSON.parse(pauseMarkersHeader) : [];
-      const speakerTurns = speakerSegmentsHeader ? JSON.parse(speakerSegmentsHeader) : [];
-      renderTranscriptOverlays(pauseMarkers, speakerTurns);
+      if (pauseMarkersHeader) pauseMarkers = JSON.parse(pauseMarkersHeader);
+      if (speakerSegmentsHeader) speakerTurns = JSON.parse(speakerSegmentsHeader);
     } catch {
       // non-fatal — the transcript itself still came through fine
     }
+    renderTranscriptOverlays(pauseMarkers, speakerTurns);
 
     const url = URL.createObjectURL(blob);
     downloadLink.href = url;
@@ -919,6 +1183,12 @@ transcribeBtn.addEventListener("click", async () => {
     enhanceResult.hidden = true;
     enhanceStatus.textContent = "";
     lastEnhancedMarkdown = null;
+
+    lastIsTextualFormat = isTextualFormat;
+    lastDownloadFilename = filename;
+    lastPauseMarkers = pauseMarkers;
+    lastSpeakerTurns = speakerTurns;
+    persistSession();
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
   } finally {
@@ -1018,6 +1288,7 @@ enhanceBtn.addEventListener("click", async () => {
     enhanceDownloads.hidden = false;
 
     enhanceStatus.textContent = "Done.";
+    persistSession();
   } catch (err) {
     enhanceStatus.textContent = `Error: ${err.message}`;
   } finally {
@@ -1090,3 +1361,9 @@ enhanceDownloadOdtBtn.addEventListener("click", async () => {
     enhanceDownloadOdtBtn.disabled = false;
   }
 });
+
+// Deferred to the very end of the module: by this point every let/const
+// this touches (sourceWavesurfer, diarizationAvailable, etc.) is fully
+// initialized and every listener is wired, so there's no risk of racing
+// the module's own top-to-bottom evaluation.
+restoreSession();
