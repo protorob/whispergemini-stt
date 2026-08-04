@@ -138,19 +138,39 @@ function loadRtfHistory() {
   }
 }
 
-function estimateRtf(engine, model, gpuActive) {
+// Diarization runs a second model (pyannote) over the whole clip on top of
+// transcription, which the base RTF table knows nothing about — without
+// this, "Multiple speakers" runs looked exactly as fast as "Single speaker"
+// in the estimate and the ETA blew past almost immediately. Only applied to
+// the uncalibrated seed guess; once a real multi-speaker run has completed,
+// its own tracked history (see rtfKey below) reflects the true end-to-end
+// time and this surcharge no longer matters.
+const DIARIZATION_RTF_SURCHARGE = 1.0;
+
+// Keeps "Multiple speakers" runs in their own calibration bucket rather than
+// polluting (or being underestimated by) plain transcription's history —
+// diarization adds real time on top, so the two shouldn't share one average.
+// Single-speaker keeps the original unsuffixed key so existing calibration
+// data already in users' localStorage keeps working.
+function rtfKey(engine, model, speakers) {
+  return speakers === "multiple" ? `${engine}:${model}:multiple` : `${engine}:${model}`;
+}
+
+function estimateRtf(engine, model, gpuActive, speakers) {
   const history = loadRtfHistory();
-  const key = `${engine}:${model}`;
+  const key = rtfKey(engine, model, speakers);
   if (history[key]) return { rtf: history[key], calibrated: true };
   const table = gpuActive ? DEFAULT_RTF.gpu : DEFAULT_RTF.cpu;
   const fallback = gpuActive ? 0.3 : 2.0;
-  return { rtf: table[model] ?? fallback, calibrated: false };
+  const baseRtf = table[model] ?? fallback;
+  const rtf = speakers === "multiple" ? baseRtf + DIARIZATION_RTF_SURCHARGE : baseRtf;
+  return { rtf, calibrated: false };
 }
 
-function recordRtf(engine, model, rtf) {
+function recordRtf(engine, model, speakers, rtf) {
   if (!Number.isFinite(rtf) || rtf <= 0) return;
   const history = loadRtfHistory();
-  const key = `${engine}:${model}`;
+  const key = rtfKey(engine, model, speakers);
   history[key] = history[key] ? history[key] * 0.7 + rtf * 0.3 : rtf;
   try {
     localStorage.setItem(RTF_STORAGE_KEY, JSON.stringify(history));
@@ -758,7 +778,7 @@ transcribeBtn.addEventListener("click", async () => {
     : null;
   const durationSec = selectedSource.durationSec ?? null;
   const { rtf: estimatedRtf, calibrated } = transcribeModel
-    ? estimateRtf(transcribeEngine, transcribeModel, gpuActive)
+    ? estimateRtf(transcribeEngine, transcribeModel, gpuActive, speakersSelect.value)
     : { rtf: null, calibrated: false };
   const estimatedTotalSec = durationSec != null && estimatedRtf != null ? durationSec * estimatedRtf : null;
 
@@ -819,7 +839,7 @@ transcribeBtn.addEventListener("click", async () => {
     hasTranscription = true;
     if (transcribeModel && durationSec) {
       const actualElapsedSec = (Date.now() - transcribeStart) / 1000;
-      recordRtf(transcribeEngine, transcribeModel, actualElapsedSec / durationSec);
+      recordRtf(transcribeEngine, transcribeModel, speakersSelect.value, actualElapsedSec / durationSec);
     }
     // AI formatting needs editable text to work from — odt (binary)
     // output has none, so the section stays hidden in that case rather
