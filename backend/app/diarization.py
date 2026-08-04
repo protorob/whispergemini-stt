@@ -1,3 +1,4 @@
+import wave
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -44,10 +45,31 @@ def _get_pipeline():
     return pipeline
 
 
+def _load_waveform(wav_path: Path) -> dict:
+    # pyannote's default file-path input decodes via torchcodec, which needs
+    # an exact-matching system FFmpeg install (esp. brittle on Windows —
+    # "full-shared" build, major version 4-8) and warns/fails without it.
+    # We already normalize every upload to 16kHz mono PCM16 WAV via ffmpeg
+    # ourselves (see audio.py), so reading it straight from Python's stdlib
+    # `wave` module and handing pyannote an in-memory tensor sidesteps
+    # torchcodec entirely — this is the in-memory workaround the library's
+    # own warning suggests, not a hack.
+    import numpy as np
+    import torch
+
+    with wave.open(str(wav_path), "rb") as f:
+        sample_rate = f.getframerate()
+        raw = f.readframes(f.getnframes())
+
+    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    waveform = torch.from_numpy(samples).unsqueeze(0)  # (channel=1, time)
+    return {"waveform": waveform, "sample_rate": sample_rate}
+
+
 def _diarize(wav_path: Path) -> list[SpeakerTurn]:
     try:
         pipeline = _get_pipeline()
-        result = pipeline(str(wav_path))
+        result = pipeline(_load_waveform(wav_path))
     except Exception as exc:
         raise DiarizationError(str(exc)) from exc
 
