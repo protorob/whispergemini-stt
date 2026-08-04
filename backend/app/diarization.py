@@ -54,9 +54,18 @@ def _get_pipeline():
     _import_pyannote_quietly()
     from pyannote.audio import Pipeline
 
-    pipeline = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1", use_auth_token=settings.hf_token
-    )
+    try:
+        # Current pyannote.audio (matching huggingface_hub's own rename)
+        # takes `token=`.
+        pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1", token=settings.hf_token
+        )
+    except TypeError:
+        # Older pyannote.audio releases only accept the pre-rename
+        # `use_auth_token=` kwarg instead.
+        pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1", use_auth_token=settings.hf_token
+        )
 
     import torch
 
