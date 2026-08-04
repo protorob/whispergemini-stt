@@ -2,6 +2,10 @@ import WaveSurfer from "/static/vendor/wavesurfer/wavesurfer.esm.js";
 import RecordPlugin from "/static/vendor/wavesurfer/record.esm.js";
 import RegionsPlugin from "/static/vendor/wavesurfer/regions.esm.js";
 
+const themeToggleBtn = document.getElementById("theme-toggle-btn");
+const themeToggleIconSun = document.getElementById("theme-toggle-icon-sun");
+const themeToggleIconMoon = document.getElementById("theme-toggle-icon-moon");
+
 const fileInput = document.getElementById("file-input");
 const sourceCard = document.getElementById("source-card");
 const stateIdle = document.getElementById("state-idle");
@@ -66,6 +70,56 @@ const customStyleLabel = document.getElementById("custom-style-label");
 const customStyleInput = document.getElementById("custom-style-input");
 const previewHint = document.getElementById("preview-hint");
 const resetPreviewBtn = document.getElementById("reset-preview-btn");
+
+// Theme: no stored preference means "follow the OS" (prefers-color-scheme,
+// handled entirely by CSS) — a stored "light"/"dark" is an explicit
+// override that wins in either direction via style.css's :root[data-theme]
+// rules. Read fresh from localStorage on every check rather than caching
+// it in a variable, so the OS-change listener below and the click handler
+// never act on a stale value.
+const THEME_STORAGE_KEY = "theme";
+
+function getStoredTheme() {
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function applyTheme(theme) {
+  if (theme) document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+
+  const isDark = theme
+    ? theme === "dark"
+    : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  setIconHidden(themeToggleIconSun, isDark);
+  setIconHidden(themeToggleIconMoon, !isDark);
+  themeToggleBtn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+}
+
+applyTheme(getStoredTheme());
+
+themeToggleBtn.addEventListener("click", () => {
+  const current = getStoredTheme();
+  const currentlyDark = current
+    ? current === "dark"
+    : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = currentlyDark ? "light" : "dark";
+  applyTheme(next);
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, next);
+  } catch {
+    // localStorage unavailable — the override just won't persist across reloads.
+  }
+});
+
+// Keeps the sun/moon icon honest if the OS theme changes while the page is
+// open and the user hasn't picked an explicit override.
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (!getStoredTheme()) applyTheme(null);
+});
 
 // Mirrors PAUSE_SENSITIVITY_SECONDS in backend/app/formats/paragraphs.py —
 // keep the gap values mentioned here in sync with that dict.

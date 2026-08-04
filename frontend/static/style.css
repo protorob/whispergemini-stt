@@ -1,30 +1,86 @@
+/* Palette direction: warm ivory/deep indigo by day, near-black navy/warm
+   parchment/bonfire-gold by night — see BRAND.md. Day mode is
+   deliberately near-monochrome (ink + cream only); gold is a night-only
+   accent, not reused in daylight — that restraint is part of the look,
+   not an oversight. --accent-contrast exists because --accent itself
+   flips from dark (indigo, day) to light (gold, night): text painted on
+   top of an --accent fill needs a color that flips the other way, or
+   white-on-gold at night becomes unreadable. */
 :root {
   color-scheme: light dark;
-  --border: #d0d0d5;
-  --muted: #666;
-  --accent: #3a5ccc;
+  --bg: #f5f5f0;
+  --ink: #1c2a4d;
+  --accent: #1c2a4d;
+  --accent-contrast: #f5f5f0;
+  --muted: #5c6a86;
+  --border: #d8d4c8;
   --danger: #cc3a3a;
-  /* Brand wordmark colors only (see BRAND.md) — not the app's functional
-     --accent, scoped to the title/tagline lockup until the rest of the
-     UI's visual direction is decided. Light/dark values are deliberately
-     different shades (not the same hex reused) so each stays legible
-     against its own background — a dull gold flattens into white, a deep
-     sapphire disappears into near-black. */
-  --brand-gold: #8a661e;
-  --brand-sapphire: #1b3a6b;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --border: #444;
-    --muted: #aaa;
-    --brand-gold: #e8c158;
-    --brand-sapphire: #6e9fe0;
+    --bg: #0a0f1e;
+    --ink: #f4e9d4;
+    --accent: #e8a872;
+    --accent-contrast: #1c2a4d;
+    --muted: #d4ddeb;
+    --border: #2a3654;
   }
+}
+
+/* Manual override via the theme-toggle button (app.js) — wins over
+   prefers-color-scheme in either direction once a user picks explicitly,
+   persisted in localStorage. Absence of [data-theme] means "follow the
+   OS", handled entirely by the media query above. */
+:root[data-theme="light"] {
+  --bg: #f5f5f0;
+  --ink: #1c2a4d;
+  --accent: #1c2a4d;
+  --accent-contrast: #f5f5f0;
+  --muted: #5c6a86;
+  --border: #d8d4c8;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0a0f1e;
+  --ink: #f4e9d4;
+  --accent: #e8a872;
+  --accent-contrast: #1c2a4d;
+  --muted: #d4ddeb;
+  --border: #2a3654;
 }
 
 * {
   box-sizing: border-box;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background-color 0.2s;
+  z-index: 20;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.theme-toggle .btn-icon {
+  margin-right: 0;
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 /* Several elements below (labels, sections) set an explicit `display`
@@ -44,6 +100,9 @@ body {
   margin: 4rem auto;
   padding: 0 1rem;
   line-height: 1.5;
+  background: var(--bg);
+  color: var(--ink);
+  transition: background-color 0.2s, color 0.2s;
 }
 
 /* Wordmark + tagline lockup: the one place a historical display serif
@@ -51,17 +110,19 @@ body {
    a webfont, since this app deliberately ships no external/CDN assets
    (see PLAN.md) and everything else runs fully on-device. Never use this
    family for body copy, transcript text, or form controls — readability
-   there matters more than theming. */
+   there matters more than theming. Both ride --accent/--muted directly
+   rather than their own fixed colors, so the wordmark itself goes
+   ink-by-day, bonfire-gold-by-night along with everything else. */
 h1 {
   font-family: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  color: var(--brand-gold);
+  color: var(--accent);
   margin-bottom: 0.15rem;
   letter-spacing: 0.02em;
 }
 
 .tagline {
   font-family: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  color: var(--brand-sapphire);
+  color: var(--muted);
   font-style: italic;
   margin: 0;
   font-size: 0.95rem;
@@ -136,7 +197,10 @@ h1 {
 .dropzone:hover,
 .dropzone.dragover {
   border-color: var(--accent);
-  background: rgba(58, 92, 204, 0.05);
+  /* color-mix keeps this a faint tint of whatever --accent currently is,
+     instead of a color literal baked to the old fixed blue that wouldn't
+     track the day/night accent swap. */
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .dropzone-label {
@@ -165,7 +229,7 @@ h1 {
 
 .mic-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .mic-btn .btn-icon {
@@ -293,7 +357,7 @@ select {
 .btn-primary {
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .btn-primary:hover {
@@ -308,7 +372,7 @@ select {
 
 .btn-secondary:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .btn-danger {
