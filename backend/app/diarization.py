@@ -95,17 +95,42 @@ def _load_waveform(wav_path: Path) -> dict:
     return {"waveform": waveform, "sample_rate": sample_rate}
 
 
+def _extract_tracks(result):
+    # pyannote.audio's pipeline output type isn't stable across versions —
+    # older releases return a pyannote.core.Annotation directly (which has
+    # .itertracks()); some newer releases wrap it in another object (e.g.
+    # "DiarizeOutput") under an attribute we have to guess at without
+    # access to that version's docs/source from here. Try the known shapes
+    # in order, and if none match, fail with a diagnostic listing the
+    # object's actual attributes instead of a bare AttributeError, so the
+    # right one can be identified and added here without more guessing.
+    if hasattr(result, "itertracks"):
+        return list(result.itertracks(yield_label=True))
+
+    for attr in ("speaker_diarization", "annotation", "diarization"):
+        candidate = getattr(result, attr, None)
+        if candidate is not None and hasattr(candidate, "itertracks"):
+            return list(candidate.itertracks(yield_label=True))
+
+    public_attrs = [a for a in dir(result) if not a.startswith("_")]
+    raise DiarizationError(
+        f"unrecognized diarization pipeline output type "
+        f"{type(result).__module__}.{type(result).__name__} — no .itertracks() "
+        f"and no known wrapper attribute found. Available attributes: {public_attrs}"
+    )
+
+
 def _diarize(wav_path: Path) -> list[SpeakerTurn]:
     try:
         pipeline = _get_pipeline()
         result = pipeline(_load_waveform(wav_path))
+        tracks = _extract_tracks(result)
+    except DiarizationError:
+        raise
     except Exception as exc:
         raise DiarizationError(str(exc)) from exc
 
-    return [
-        SpeakerTurn(start=turn.start, end=turn.end, speaker=speaker)
-        for turn, _, speaker in result.itertracks(yield_label=True)
-    ]
+    return [SpeakerTurn(start=turn.start, end=turn.end, speaker=speaker) for turn, _, speaker in tracks]
 
 
 def _normalize_labels(turns: list[SpeakerTurn]) -> dict[str, str]:
