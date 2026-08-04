@@ -5,6 +5,9 @@ import RegionsPlugin from "/static/vendor/wavesurfer/regions.esm.js";
 const themeToggleBtn = document.getElementById("theme-toggle-btn");
 const themeToggleIconSun = document.getElementById("theme-toggle-icon-sun");
 const themeToggleIconMoon = document.getElementById("theme-toggle-icon-moon");
+const aboutBtn = document.getElementById("about-btn");
+const aboutDialog = document.getElementById("about-dialog");
+const aboutCloseBtn = document.getElementById("about-close-btn");
 
 const fileInput = document.getElementById("file-input");
 const sourceCard = document.getElementById("source-card");
@@ -119,6 +122,19 @@ themeToggleBtn.addEventListener("click", () => {
 // open and the user hasn't picked an explicit override.
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   if (!getStoredTheme()) applyTheme(null);
+});
+
+// About/how-to-use popup: a native <dialog> rather than a hand-rolled
+// modal — free focus-trapping, ESC-to-close, and top-layer stacking with
+// zero extra code or dependencies.
+aboutBtn.addEventListener("click", () => aboutDialog.showModal());
+aboutCloseBtn.addEventListener("click", () => aboutDialog.close());
+
+// Click-outside-to-close: <dialog>'s own box has no padding here, so a
+// click that lands on the dialog element itself (not one of its children)
+// is necessarily on the ::backdrop area outside the visible card.
+aboutDialog.addEventListener("click", (event) => {
+  if (event.target === aboutDialog) aboutDialog.close();
 });
 
 // Mirrors PAUSE_SENSITIVITY_SECONDS in backend/app/formats/paragraphs.py —

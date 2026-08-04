@@ -54,10 +54,12 @@
   box-sizing: border-box;
 }
 
-.theme-toggle {
+/* Shared shape for the small fixed circular icon buttons pinned to the
+   top-right corner (theme toggle, about/info) — each just sets its own
+   `right` offset so they sit side by side. */
+.corner-btn {
   position: fixed;
   top: 1rem;
-  right: 1rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -72,15 +74,101 @@
   z-index: 20;
 }
 
-.theme-toggle:hover {
+.corner-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.theme-toggle .btn-icon {
+.corner-btn .btn-icon {
   margin-right: 0;
   width: 1.15rem;
   height: 1.15rem;
+}
+
+.theme-toggle {
+  right: 1rem;
+}
+
+.about-btn {
+  right: 3.5rem;
+}
+
+/* The <dialog> box itself is a bare, invisible sizing frame — no padding,
+   no border, no background — so it exactly matches its
+   .about-dialog-content child with no gap between them. That's what
+   makes the click-outside-to-close check in app.js correct: a click can
+   only ever land on the dialog element itself (not a child) when it's
+   genuinely outside the visible card, on the ::backdrop. If this had its
+   own padding/background, clicks inside that padding would look like
+   part of the card but still close the dialog — a confusing misclick. */
+.about-dialog {
+  max-width: 32rem;
+  width: 90vw;
+  max-height: 85vh;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+}
+
+.about-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.about-dialog-content {
+  position: relative;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.about-dialog h2 {
+  font-family: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  color: var(--accent);
+  margin: 0 0 0.15rem;
+}
+
+.about-dialog .tagline {
+  margin-bottom: 1rem;
+}
+
+.about-dialog h3 {
+  font-size: 1rem;
+  margin: 1.25rem 0 0.4rem;
+}
+
+.about-dialog p {
+  margin: 0.5rem 0;
+  font-size: 0.92rem;
+}
+
+.about-dialog ol {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+  font-size: 0.92rem;
+}
+
+.about-dialog ol li {
+  margin-bottom: 0.4rem;
+}
+
+.about-dialog hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.25rem 0 0.75rem;
+}
+
+.about-contact {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.about-contact a {
+  color: var(--accent);
 }
 
 /* Several elements below (labels, sections) set an explicit `display`

@@ -69,11 +69,64 @@
     <symbol id="icon-moon" viewBox="0 0 24 24">
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
     </symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="16" x2="12" y2="12"/>
+      <line x1="12" y1="8" x2="12.01" y2="8"/>
+    </symbol>
   </svg>
-  <button type="button" id="theme-toggle-btn" class="theme-toggle" aria-label="Toggle light/dark theme">
+  <button type="button" id="about-btn" class="corner-btn about-btn" aria-label="About Cassiodorus / how to use it">
+    <svg class="btn-icon" aria-hidden="true"><use href="#icon-info"></use></svg>
+  </button>
+  <button type="button" id="theme-toggle-btn" class="corner-btn theme-toggle" aria-label="Toggle light/dark theme">
     <svg class="btn-icon" id="theme-toggle-icon-sun" aria-hidden="true"><use href="#icon-sun"></use></svg>
     <svg class="btn-icon" id="theme-toggle-icon-moon" hidden aria-hidden="true"><use href="#icon-moon"></use></svg>
   </button>
+
+  <dialog id="about-dialog" class="about-dialog">
+    <div class="about-dialog-content">
+      <button type="button" id="about-close-btn" class="state-close-btn" aria-label="Close">
+        <svg class="btn-icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+      </button>
+      <h2>About Cassiodorus</h2>
+      <p class="tagline">Ancient diligence. Modern intelligence.</p>
+
+      <p>
+        Cassiodorus turns spoken audio into accurate, editable text —
+        entirely on your own machine. It's named for the 6th-century Roman
+        scholar who preserved classical texts by hand at his monastery's
+        scriptorium; today the diligence is automated, but the care is the
+        same.
+      </p>
+
+      <h3>How it works</h3>
+      <p>
+        Transcription runs locally via Whisper-family speech recognition
+        (faster-whisper, or Parakeet on a compatible GPU) — your audio never
+        leaves this machine unless you explicitly choose to send the
+        resulting text to Google's Gemini for optional AI-assisted
+        formatting. When "Multiple speakers" is selected, a second local
+        model (pyannote.audio) identifies who's speaking and labels each
+        part of the transcript accordingly.
+      </p>
+
+      <h3>How to use</h3>
+      <ol>
+        <li>Upload an audio/video file, or record straight from your microphone.</li>
+        <li>Choose your options: engine, language, output format, paragraph-break sensitivity, and whether to detect multiple speakers.</li>
+        <li>Click <strong>Transcribe</strong>. The first use of a given model downloads it once; after that it's cached locally.</li>
+        <li>Edit the result directly in the preview if needed — this is also what gets sent onward if you use "Format with AI".</li>
+        <li>Download the transcript, or optionally generate a cleaned-up, structured version with Gemini.</li>
+      </ol>
+
+      <hr />
+      <p class="about-contact">
+        Questions, or want to chat about the project?
+        <a href="mailto:hello@artomultiplo.eu">hello@artomultiplo.eu</a>
+      </p>
+    </div>
+  </dialog>
+
   <main>
     <h1>Cassiodorus</h1>
     <p class="tagline">Ancient diligence. Modern intelligence.</p>
