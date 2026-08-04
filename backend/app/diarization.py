@@ -1,3 +1,4 @@
+import warnings
 import wave
 from dataclasses import dataclass
 from functools import lru_cache
@@ -5,6 +6,16 @@ from pathlib import Path
 
 from app.config import settings
 from app.engines.base import Segment
+
+# pyannote.audio's io module checks torchcodec availability the moment it's
+# imported and warns loudly if that check fails — regardless of whether
+# torchcodec's file-path decoding is actually ever used. We never use it
+# (see _load_waveform below, which reads the WAV ourselves and hands
+# pyannote an in-memory tensor instead), so this specific warning is just
+# import-time noise in our case, not a sign anything is broken.
+warnings.filterwarnings(
+    "ignore", message=r"torchcodec is not installed correctly.*", category=UserWarning
+)
 
 
 class DiarizationError(Exception):
