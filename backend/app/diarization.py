@@ -1,4 +1,3 @@
-import warnings
 import wave
 from dataclasses import dataclass
 from functools import lru_cache
@@ -6,16 +5,6 @@ from pathlib import Path
 
 from app.config import settings
 from app.engines.base import Segment
-
-# pyannote.audio's io module checks torchcodec availability the moment it's
-# imported and warns loudly if that check fails — regardless of whether
-# torchcodec's file-path decoding is actually ever used. We never use it
-# (see _load_waveform below, which reads the WAV ourselves and hands
-# pyannote an in-memory tensor instead), so this specific warning is just
-# import-time noise in our case, not a sign anything is broken.
-warnings.filterwarnings(
-    "ignore", message=r"torchcodec is not installed correctly.*", category=UserWarning
-)
 
 
 class DiarizationError(Exception):
@@ -29,13 +18,32 @@ class SpeakerTurn:
     speaker: str
 
 
+def _import_pyannote_quietly():
+    # pyannote.audio's io module checks torchcodec availability the moment
+    # it's imported and warns loudly (via warnings.warn, not logging) if
+    # that check fails — regardless of whether torchcodec's file-path
+    # decoding is ever actually used, which we never do (see
+    # _load_waveform below). A plain module-level warnings.filterwarnings
+    # call here turned out not to reliably win: something later in
+    # pyannote/torch's own import chain resets or reorders the global
+    # filter list, so the warning still slipped through. Scoping the
+    # suppression to a catch_warnings() block around just this import is
+    # immune to that, since it snapshots/restores the filter list itself.
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        import pyannote.audio
+
+    return pyannote.audio
+
+
 def diarization_importable() -> bool:
     """pyannote.audio pulls in torch — a heavy optional dependency (see
     requirements-diarization.txt) — so this is imported lazily here, the
     same pattern as the Parakeet engine's own importability check."""
     try:
-        import pyannote.audio  # noqa: F401
-
+        _import_pyannote_quietly()
         return True
     except Exception:
         return False
@@ -43,6 +51,7 @@ def diarization_importable() -> bool:
 
 @lru_cache(maxsize=1)
 def _get_pipeline():
+    _import_pyannote_quietly()
     from pyannote.audio import Pipeline
 
     pipeline = Pipeline.from_pretrained(
