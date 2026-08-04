@@ -276,8 +276,13 @@ function persistSession() {
       speakerTurns: lastSpeakerTurns,
       enhancedMarkdown: lastEnhancedMarkdown,
     }));
-  } catch {
-    // localStorage unavailable/full — session just won't survive a reload.
+  } catch (err) {
+    // Expected failure modes here are storage-full or storage-unavailable
+    // (private browsing) — genuinely non-fatal, the session just won't
+    // survive a reload. But swallowing *every* error silently would also
+    // hide a real bug in this function, so at least surface it for
+    // debugging rather than failing invisibly.
+    console.warn("Could not save session:", err);
   }
 }
 
