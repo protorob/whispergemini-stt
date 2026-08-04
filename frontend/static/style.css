@@ -463,17 +463,31 @@ select {
 .preview {
   white-space: pre-wrap;
   word-break: break-word;
-  background: rgba(128, 128, 128, 0.1);
+  /* A subtle tint of --ink mixed into --bg, rather than a flat gray —
+     stays a faint, theme-consistent panel shade in both modes instead of
+     one fixed gray that reads fine on one background and muddy on the
+     other. */
+  background: color-mix(in srgb, var(--ink) 6%, var(--bg));
+  color: var(--ink);
   border-radius: 0.4rem;
   padding: 0.75rem;
   max-height: 16rem;
   overflow-y: auto;
 }
 
+/* Textareas are native form controls — without an explicit color here,
+   `color-scheme: light dark` on :root lets the browser paint this with
+   its own dark-mode text color whenever the OS prefers dark, regardless
+   of which theme our own [data-theme] override is actually showing. That
+   produced near-invisible pale text on the (correctly light-mode) gray
+   panel above. Setting color/background explicitly here, rather than
+   trusting the UA default, is the actual fix — not a cosmetic tweak. */
 textarea.preview {
   display: block;
   width: 100%;
   font: inherit;
+  background: color-mix(in srgb, var(--ink) 6%, var(--bg));
+  color: var(--ink);
   border: 1px solid var(--border);
   resize: vertical;
 }
