@@ -326,6 +326,7 @@ async function restoreSession() {
   setSource(audioRecord.kind || "file", audioRecord.blob, audioRecord.filename || session.filename || "audio");
   selectedSource.durationSec = session.durationSec ?? null;
   selectedSource.audioSkipped = false;
+  updateSourceSummaryText();
 
   // ODT results were never kept client-side as bytes (only downloaded
   // once, server-generated) — nothing meaningful to restore for that case
@@ -500,6 +501,7 @@ let engineLanguageSupport = {}; // engine name -> list of supported codes, or nu
 let gpuActive = false; // caps.hardware.gpu_usable, used to seed transcription time estimates
 let diarizationAvailable = false; // caps.diarization.available
 let autoDefaultModel = null; // the concrete model size "auto" currently resolves to, per /api/capabilities
+let maxUploadBytes = 1024 * 1024 * 1024; // caps.max_upload_mb; this default is only used if /api/capabilities hasn't loaded yet
 
 // The source card is a single element showing one of these four states at a
 // time — idle (drop/record entry point), recording (live waveform), a brief
@@ -607,6 +609,7 @@ fetch("/api/capabilities")
   .then((caps) => {
     const auto = caps.auto_default;
     autoDefaultModel = auto.model;
+    maxUploadBytes = caps.max_upload_mb * 1024 * 1024;
     modelSelect.innerHTML = "";
 
     const autoOption = document.createElement("option");
@@ -760,7 +763,9 @@ function loadSourcePreview(blob) {
   // finishes) rather than trusted from the source, since recorded blobs
   // don't carry a reliable duration any other way.
   sourceWavesurfer.on("ready", () => {
-    if (selectedSource) selectedSource.durationSec = sourceWavesurfer.getDuration();
+    if (!selectedSource) return;
+    selectedSource.durationSec = sourceWavesurfer.getDuration();
+    updateSourceSummaryText();
   });
 }
 
@@ -768,10 +773,19 @@ sourcePlayBtn.addEventListener("click", () => {
   if (sourceWavesurfer) sourceWavesurfer.playPause();
 });
 
+// Duration is appended once known (either restored from the session or
+// once wavesurfer finishes decoding) — filled in after the fact rather
+// than blocking the initial "Selected file: ..." label on it.
+function updateSourceSummaryText() {
+  if (!selectedSource) return;
+  const { kind, filename, durationSec } = selectedSource;
+  const label = kind === "file" ? `Selected file: ${filename}` : `Recorded audio ready: ${filename}`;
+  sourceSummaryText.textContent = durationSec != null ? `${label} (${formatDuration(durationSec)})` : label;
+}
+
 function setSource(kind, blob, filename) {
   selectedSource = { blob, filename, kind };
-  sourceSummaryText.textContent =
-    kind === "file" ? `Selected file: ${filename}` : `Recorded audio ready: ${filename}`;
+  updateSourceSummaryText();
   // Unhide the review panel before creating the wavesurfer instance — its
   // container needs real (non-zero) layout dimensions at creation time.
   setCardState("review");
@@ -853,7 +867,20 @@ function readFileWithProgress(file, onProgress) {
   });
 }
 
+function formatMb(bytes) {
+  return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+}
+
 async function handleFileSelected(file) {
+  // Checked up front, before FileReader/WaveSurfer ever touch the file:
+  // browsers hard-fail decodeAudioData/fetch bodies above 2GB, and that
+  // failure is a confusing console error rather than a real message.
+  if (file.size > maxUploadBytes) {
+    statusEl.textContent =
+      `"${file.name}" is ${formatMb(file.size)}, which is over the ${formatMb(maxUploadBytes)} upload limit. ` +
+      "Try a compressed audio format (e.g. mp3/m4a) or a shorter clip.";
+    return;
+  }
   setCardState("uploading");
   uploadProgressBar.value = 0;
   uploadProgressLabel.textContent = `Loading ${file.name}…`;

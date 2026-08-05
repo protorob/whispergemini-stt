@@ -135,6 +135,7 @@ is not wired into `docker-compose.yml`).
 | `PARAKEET_MODEL` | `nvidia/parakeet-tdt-1.1b` | Which Parakeet checkpoint to use (GPU-only engine). |
 | `PARAKEET_LANGUAGES` | `en` | Comma-separated languages the configured Parakeet model actually supports. |
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Default Gemini model for AI formatting. |
+| `MAX_UPLOAD_MB` | `1024` | Max upload size in MB. Kept well under the browser's hard ~2GB limit on `decodeAudioData`/`fetch` bodies — raising this past ~1800 risks the upload failing client-side with a confusing error instead of the clean 413 this produces. |
 
 Check `GET /api/capabilities` at any time to see what hardware was
 detected and which settings are currently active.

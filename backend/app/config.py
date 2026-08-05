@@ -19,6 +19,7 @@ class Settings:
     parakeet_languages: list[str]
     gemini_model: str
     hf_token: str | None
+    max_upload_mb: int
 
 
 def _load_settings() -> Settings:
@@ -36,6 +37,10 @@ def _load_settings() -> Settings:
         ],
         gemini_model=os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"),
         hf_token=os.environ.get("HF_TOKEN"),
+        # Kept well under the browser's hard 2GB decodeAudioData/fetch-body
+        # limits (see DEVLOG) so a rejected upload gets a clear message
+        # instead of a confusing client-side failure.
+        max_upload_mb=int(os.environ.get("MAX_UPLOAD_MB", "1024")),
     )
 
 

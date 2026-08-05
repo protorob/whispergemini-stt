@@ -126,6 +126,7 @@ def capabilities():
             "compute_type": settings.whisper_compute_type,
         },
         "available_models": MODEL_SIZES,
+        "max_upload_mb": settings.max_upload_mb,
         "engines": {
             "faster-whisper": {
                 "available": True,
@@ -205,10 +206,21 @@ async def transcribe(
     else:
         model_size = resolve_model_size(model)
 
+    max_upload_bytes = settings.max_upload_mb * 1024 * 1024
     suffix = Path(file.filename or "audio").suffix or ".bin"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp_in:
-        tmp_in.write(await file.read())
         input_path = Path(tmp_in.name)
+        total = 0
+        while chunk := await file.read(1024 * 1024):
+            total += len(chunk)
+            if total > max_upload_bytes:
+                tmp_in.close()
+                input_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"file exceeds the {settings.max_upload_mb} MB upload limit",
+                )
+            tmp_in.write(chunk)
 
     try:
         wav_path = await run_in_threadpool(normalize_to_wav, input_path)
